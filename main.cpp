@@ -5,7 +5,7 @@
 #include <malloc.h>
 
 // ============================== Example: WebSocket-like handler =========
-// Demonstrates inheritance only for non-hot paths + hot-path via fn pointer
+// Demonstrates inheritance only for non-hot paths + hot-path via fn pointer.
 class WsEcho: public TCPSocket
 {
 public:
