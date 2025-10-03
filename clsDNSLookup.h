@@ -2,6 +2,7 @@
 #define CLSDNSLOOKUP_H
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -23,7 +24,7 @@ struct DNSRequest {
     dns_callback_t cb;
     void* user_data;
     uint16_t qid;
-    uint16_t qtype;  // اضافه شده برای ذخیره QTYPE (A=1, AAAA=28)
+    uint16_t qtype;  // A=1, AAAA=28
     time_t sent_time;
 };
 
@@ -47,7 +48,7 @@ private:
     EpollReactor* m_pReactor;
     struct SocketContext m_SocketContext {};
 
-    std::unordered_map<uint16_t, DNSRequest*> m_pending;  // by query_id
+    std::map<std::pair<uint16_t, uint16_t>, DNSRequest*> m_pending;
     std::unordered_map<std::string, std::pair<std::vector<std::string>, time_t>> m_cache;  // hostname -> (IPs, timestamp)
     size_t m_cache_ttl_sec;
     std::vector<std::string> m_dns_servers;  // e.g., "8.8.8.8"

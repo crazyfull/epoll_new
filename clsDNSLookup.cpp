@@ -103,13 +103,18 @@ void DNSLookup::on_dns_read() {
         return;
     }
 
-    auto it = m_pending.find(id);
+    // Try both A and AAAA qtypes
+    DNSRequest* req = nullptr;
+    auto it = m_pending.find({id, 1});  // Check A
     if (it == m_pending.end()) {
-        printf("Unknown query ID: %u\n", id);
-        return;
+        it = m_pending.find({id, 28});  // Check AAAA
+        if (it == m_pending.end()) {
+            printf("Unknown query ID: %u\n", id);
+            return;
+        }
     }
+    req = it->second;
 
-    DNSRequest* req = it->second;
     if (rcode != 0) {
         const char* rcode_str = "Unknown";
         switch (rcode) {
@@ -119,8 +124,8 @@ void DNSLookup::on_dns_read() {
         case 4: rcode_str = "NotImp"; break;
         case 5: rcode_str = "Refused"; break;
         }
-        printf("DNS error for %s: RCODE=%u (%s)\n", req->hostname.c_str(), rcode, rcode_str);
-        // Log authority section for debug
+        printf("DNS error for %s (QTYPE=%u): RCODE=%u (%s)\n", req->hostname.c_str(), req->qtype, rcode, rcode_str);
+        // Log authority section
         size_t pos = 12;
         while (pos < len && buffer[pos] != 0) {
             if ((buffer[pos] & 0xC0) == 0xC0) { pos += 2; break; }
@@ -144,7 +149,7 @@ void DNSLookup::on_dns_read() {
         printf("%s\n", auth_ss.str().c_str());
         call_callback(req, {});
         delete req;
-        m_pending.erase(id);
+        m_pending.erase(it);
         return;
     }
 
@@ -162,20 +167,20 @@ void DNSLookup::on_dns_read() {
     }
 
     delete req;
-    m_pending.erase(id);
+    m_pending.erase(it);
 }
 
 void DNSLookup::maintenance() {
     time_t now = time(nullptr);
-    std::vector<uint16_t> to_remove;
+    std::vector<std::pair<uint16_t, uint16_t>> to_remove;
     for (auto& p : m_pending) {
         if (now - p.second->sent_time > 5) {
-            printf("DNS timeout for %s (ID %u)\n", p.second->hostname.c_str(), p.first);
+            printf("DNS timeout for %s (ID %u, QTYPE=%u)\n", p.second->hostname.c_str(), p.first.first, p.first.second);
             call_callback(p.second, {});
             to_remove.push_back(p.first);
         }
     }
-    for (uint16_t id : to_remove) {
+    for (const auto& id : to_remove) {
         delete m_pending[id];
         m_pending.erase(id);
     }
@@ -288,29 +293,53 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data)
     }
 
     // Generate query for A
-    uint16_t qid = generate_query_id();
-    DNSRequest* req = new DNSRequest{host, cb, user_data, qid, now};
-    m_pending[qid] = req;
+    uint16_t qid_a = generate_query_id();
+    DNSRequest* req_a = new DNSRequest{host, cb, user_data, qid_a, 1, now};  // QTYPE=A
+    m_pending[{qid_a, 1}] = req_a;
 
-    std::vector<uint8_t> query = build_dns_query(host, 1);  // A
-    // Set ID before logging
-    query[0] = qid >> 8;
-    query[1] = qid & 0xFF;
+    std::vector<uint8_t> query_a = build_dns_query(host, 1);  // A
+    query_a[0] = qid_a >> 8;
+    query_a[1] = qid_a & 0xFF;
 
-    // Log query packet
-    std::stringstream ss;
-    ss << "DNS query sent for " << hostname << " (ID " << qid << ", QTYPE=A): ";
-    for (size_t i = 0; i < query.size(); ++i) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << (int)query[i] << " ";
+    // Log query packet for A
+    std::stringstream ss_a;
+    ss_a << "DNS query sent for " << hostname << " (ID " << qid_a << ", QTYPE=A): ";
+    for (size_t i = 0; i < query_a.size(); ++i) {
+        ss_a << std::hex << std::setw(2) << std::setfill('0') << (int)query_a[i] << " ";
     }
-    printf("%s\n", ss.str().c_str());
+    printf("%s\n", ss_a.str().c_str());
 
-    if (!send_query(query, qid)) {
-        m_pending.erase(qid);
-        delete req;
+    if (!send_query(query_a, qid_a)) {
+        m_pending.erase({qid_a, 1});
+        delete req_a;
         cb(hostname, nullptr, 0, user_data);
         return -1;
     }
+
+    /*
+    // Generate query for AAAA
+    uint16_t qid_aaaa = generate_query_id();
+    DNSRequest* req_aaaa = new DNSRequest{host, cb, user_data, qid_aaaa, 28, now};  // QTYPE=AAAA
+    m_pending[{qid_aaaa, 28}] = req_aaaa;
+
+    std::vector<uint8_t> query_aaaa = build_dns_query(host, 28);  // AAAA
+    query_aaaa[0] = qid_aaaa >> 8;
+    query_aaaa[1] = qid_aaaa & 0xFF;
+
+    // Log query packet for AAAA
+    std::stringstream ss_aaaa;
+    ss_aaaa << "DNS query sent for " << hostname << " (ID " << qid_aaaa << ", QTYPE=AAAA): ";
+    for (size_t i = 0; i < query_aaaa.size(); ++i) {
+        ss_aaaa << std::hex << std::setw(2) << std::setfill('0') << (int)query_aaaa[i] << " ";
+    }
+
+    printf("%s\n", ss_aaaa.str().c_str());
+
+    if (!send_query(query_aaaa, qid_aaaa)) {
+        m_pending.erase({qid_aaaa, 28});
+        delete req_aaaa;
+        // Still proceed with A query
+    }*/
 
     return 0;
 }
@@ -344,10 +373,10 @@ bool DNSLookup::parse_dns_response(const uint8_t* packet, size_t len, uint16_t q
         bool name_ended = false;
         while (pos < len && !name_ended) {
             if ((packet[pos] & 0xC0) == 0xC0) {
-                pos += 2;  // Compression pointer
+                pos += 2;
                 name_ended = true;
             } else if (packet[pos] == 0) {
-                pos++;  // Null terminator
+                pos++;
                 name_ended = true;
             } else {
                 pos += packet[pos] + 1;

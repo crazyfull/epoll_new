@@ -134,8 +134,8 @@ int main()
 
     DNSLookup dnsLookup(srv.getRoundRobinShard());
 
-    //dnsLookup.resolve("freetestdata.com", cbResolve, nullptr);
-    dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr);
+    dnsLookup.resolve("freetestdata.com", cbResolve, nullptr);
+    dnsLookup.resolve("google.com", cbResolve, nullptr);
     getchar();
 
 
