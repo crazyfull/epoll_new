@@ -4,15 +4,18 @@
 #include <errno.h>
 #include <poll.h>  // for parsing resolv.conf if needed
 
-DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec) : m_reactor(reactor), m_cache_ttl_sec(cache_ttl_sec) {
+DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec) :
+    m_pReactor(reactor),
+    m_cache_ttl_sec(cache_ttl_sec) {
+
     load_dns_servers();
-    if (m_dns_servers.empty()) {
-        m_dns_servers = {"8.8.8.8", "8.8.4.4"};  // fallback
-    }
+    //if (m_dns_servers.empty()) {
+    m_dns_servers = {"8.8.8.8", "8.8.4.4"};  // fallback
+    //}
 
     // Create UDP socket
-    m_fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-    if (m_fd == -1) {
+    m_SocketContext.fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (m_SocketContext.fd == -1) {
         perror("DNS socket creation failed");
         return;
     }
@@ -22,37 +25,47 @@ DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec) : m_reactor(re
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = 0;
-    if (bind(m_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+    if (bind(m_SocketContext.fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
         perror("DNS bind failed");
-        close(m_fd);
-        m_fd = -1;
+        close();
         return;
     }
 
+    // set event
+    m_SocketContext.ev.events = EPOLLIN;// | EPOLLET;
+
     // Add to epoll
-    struct epoll_event ev{};
-    ev.events = EPOLLIN | EPOLLET;
-    ev.data.fd = m_fd;
-    if (!m_reactor->add_fd(m_fd, &ev, EPOLLIN | EPOLLET)) {
+    bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_DNS_LOOKUP_SOCKET, this);
+    if(!ret){
         perror("Add DNS fd to epoll failed");
-        close(m_fd);
-        m_fd = -1;
+        close();
+        return;
     }
 
-    printf("DNSLookup initialized with fd %d\n", m_fd);
+
+    printf("DNSLookup initialized with fd %d\n", fd());
 }
 
 DNSLookup::~DNSLookup() {
-    if (m_fd != -1) {
-        m_reactor->del_fd(m_fd);
-        close(m_fd);
-    }
+    close();
+
     // Flush pending (call callbacks with 0 ips if needed)
     for (auto& p : m_pending) {
         call_callback(p.second, {});
         delete p.second;
     }
     m_pending.clear();
+}
+
+int DNSLookup::fd() const {
+    return m_SocketContext.fd;
+}
+
+void DNSLookup::close()
+{
+    m_pReactor->del_fd(m_SocketContext.fd, true);   // hamishe lazem nis
+    ::close(m_SocketContext.fd);
+    m_SocketContext.fd = -1;
 }
 
 int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data) {
@@ -95,29 +108,40 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data)
 }
 
 void DNSLookup::on_dns_read() {
+
     uint8_t buffer[512];  // DNS max UDP size
     struct sockaddr_in from_addr{};
     socklen_t from_len = sizeof(from_addr);
 
-    ssize_t len = recvfrom(m_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from_addr, &from_len);
+    ssize_t len = recvfrom(m_SocketContext.fd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from_addr, &from_len);
     if (len < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
         perror("DNS recvfrom failed");
         return;
     }
 
+
     // Parse response (header 12 bytes)
-    if (len < 12) return;
+    if (len < 12)
+        return;
 
     uint16_t id = (buffer[0] << 8) | buffer[1];
     uint16_t flags = (buffer[2] << 8) | buffer[3];
-    if ((flags & 0x0F) != 0x0C) return;  // Not standard query response
+    if ((flags & 0x0F) != 0x0C){
+        perror("Not standard query response");
+        //return;  // Not standard query response
+    }
 
     uint16_t qdcount = (buffer[4] << 8) | buffer[5];
     uint16_t ancount = (buffer[6] << 8) | buffer[7];
 
+    printf("on_dns_read() len: %zd qdcount: [%hu]\n", len, ancount);
+
     auto it = m_pending.find(id);
-    if (it == m_pending.end()) return;  // Unknown query
+    if (it == m_pending.end())
+        return;  // Unknown query
+
 
     DNSRequest* req = it->second;
     std::vector<std::string> ips;
@@ -225,7 +249,7 @@ bool DNSLookup::send_query(const std::vector<uint8_t>& query, uint16_t qid) {
     if (inet_pton(AF_INET, m_dns_servers[0].c_str(), &server_addr.sin_addr) <= 0)
         return false;
 
-    ssize_t sent = sendto(m_fd, pkt.data(), pkt.size(), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    ssize_t sent = sendto(m_SocketContext.fd, pkt.data(), pkt.size(), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if (sent < 0) {
         perror("DNS sendto failed");
         return false;

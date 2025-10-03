@@ -40,9 +40,12 @@ public:
     // Flush old cache and pending timeouts (call in reactor maintenance)
     void maintenance();
 
+    int fd() const;
+    void close();
 private:
-    EpollReactor* m_reactor;
-    int m_fd = -1;
+    EpollReactor* m_pReactor;
+    struct SocketContext m_SocketContext {};
+
     std::unordered_map<uint16_t, DNSRequest*> m_pending;  // by query_id
     std::unordered_map<std::string, std::pair<std::vector<std::string>, time_t>> m_cache;  // hostname -> (IPs, timestamp)
     size_t m_cache_ttl_sec;

@@ -1,4 +1,5 @@
 #include "clsEpollReactor.h"
+#include "clsDNSLookup.h"
 #include "clsSocketList.h"
 #include "clsUDPSocket.h"
 #include "clsTimer.h"
@@ -362,6 +363,20 @@ void EpollReactor::onTimerEvent(int fd, uint32_t &ev, void *ptr)
     }
 }
 
+void EpollReactor::onDNSEvent(int fd, uint32_t &ev, void *ptr)
+{
+    DNSLookup *pDNSLookup = static_cast<DNSLookup*>(ptr);
+    if(!pDNSLookup){
+        printf("pDNSLookup null\n");
+        ::close(fd);
+        return;
+    }
+
+    if (ev & EPOLLIN) {
+        pDNSLookup->on_dns_read();
+    }
+}
+
 void EpollReactor::run(std::atomic<bool> &stop)
 {
     printf("EpollReactor::run()\n");
@@ -420,6 +435,10 @@ void EpollReactor::run(std::atomic<bool> &stop)
                 continue;
             }
 
+            if (socketInfo->type == IS_DNS_LOOKUP_SOCKET) {
+                onDNSEvent(fd, ev, socketInfo->socketBasePtr);
+                continue;
+            }
             //int fd = evs[i].data.fd;
             //printf("ev: %d\n", ev);
 

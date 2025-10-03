@@ -65,6 +65,7 @@ private:
     void onTCPEvent(int fd, uint32_t &ev, void *ptr);
     void onUDPEvent(int fd, uint32_t &ev, void *ptr);
     void onTimerEvent(int fd, uint32_t &ev, void *ptr);
+    void onDNSEvent(int fd, uint32_t &ev, void *ptr);
 };
 
 

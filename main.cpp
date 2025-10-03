@@ -81,6 +81,16 @@ TCPSocket* OnAccepted(void* p){
 
 // ============================== Example main ===========================
 #include <sys/resource.h>
+#include "clsDNSLookup.h"
+
+void cbResolve(const char *hostname, char **ips, size_t count, void *p)
+{
+    if(count == 0){
+        printf("not result\n");
+    }else{
+        printf("ip: %s\n", ips[0]);
+    }
+}
 
 int main()
 {
@@ -120,6 +130,14 @@ int main()
         std::this_thread::sleep_for(std::chrono::seconds(3600));
     */
     //for(;;)
+    getchar();
+
+    DNSLookup dnsLookup(srv.getRoundRobinShard());
+
+    //dnsLookup.resolve("freetestdata.com", cbResolve, nullptr);
+    dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr);
+    getchar();
+
 
     Timer timer;
     timer.setReactor(srv.getRoundRobinShard());
@@ -128,13 +146,14 @@ int main()
     });
 
     getchar();
+    timer.stop();
 
     //connect
 
 
     //for(int i = 0; i < 1;i++){
 
-    TCPSocket* outbound = new WsEcho();
+    WsEcho* outbound = new WsEcho();
     outbound->setReactor(srv.getRoundRobinShard());
     outbound->connectTo("freetestdata.com", 80);
     //outbound->connectTo("127.0.0.1", 8080);
@@ -150,20 +169,5 @@ int main()
 }
 
 
-#include "clsDNSLookup.h"
 
-void cbResolve(const char *hostname, char **ips, size_t count, void *p)
-{
-    if(count == 0){
-        printf("not result\n");
-    }else{
-        printf("ip: %s\n", ips[0]);
-    }
-}
 
-int main3()
-{
-
-   // DNSLookup::resolve("freetestdata.com", cbResolve, nullptr);
-    getchar();
-}
