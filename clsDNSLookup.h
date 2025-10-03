@@ -22,7 +22,8 @@ struct DNSRequest {
     std::string hostname;
     dns_callback_t cb;
     void* user_data;
-    uint16_t query_id;
+    uint16_t qid;
+    uint16_t qtype;  // اضافه شده برای ذخیره QTYPE (A=1, AAAA=28)
     time_t sent_time;
 };
 
