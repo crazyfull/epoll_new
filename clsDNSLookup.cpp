@@ -13,41 +13,7 @@ DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_m
 
     load_dns_servers();
     m_dns_servers = {"8.8.8.8", "8.8.4.4"};  // fallback
-
-    m_SocketContext.fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-    if (m_SocketContext.fd == -1) {
-#ifdef DEBUG
-        perror("DNS socket creation failed");
-#endif
-        return;
-    }
-
-    struct sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = 0;
-    if (bind(m_SocketContext.fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-#ifdef DEBUG
-        perror("DNS bind failed");
-#endif
-        close();
-        return;
-    }
-
-    m_SocketContext.ev.events = EPOLLIN;// | EPOLLET;
-
-    bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_DNS_LOOKUP_SOCKET, this);
-    if (!ret) {
-#ifdef DEBUG
-        perror("Add DNS fd to epoll failed");
-#endif
-        close();
-        return;
-    }
-
-#ifdef DEBUG
-    printf("DNSLookup initialized with fd %d\n", fd());
-#endif
+    reset_socket();
 }
 
 DNSLookup::~DNSLookup() {
@@ -69,6 +35,53 @@ void DNSLookup::close() {
         ::close(m_SocketContext.fd);
         m_SocketContext.fd = -1;
     }
+}
+
+void DNSLookup::reset_socket() {
+
+#ifdef DEBUG
+    int error = 0;
+    socklen_t errlen = sizeof(error);
+    getsockopt(m_SocketContext.fd, SOL_SOCKET, SO_ERROR, &error, &errlen);
+    printf("Socket error detected: %s\n", strerror(error));
+#endif
+
+    close(); // Close existing socket if any
+
+    m_SocketContext.fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (m_SocketContext.fd == -1) {
+#ifdef DEBUG
+        perror("DNS socket creation failed");
+#endif
+        return;
+    }
+
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = 0;
+    if (bind(m_SocketContext.fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+#ifdef DEBUG
+        perror("DNS bind failed");
+#endif
+        close();
+        return;
+    }
+
+    m_SocketContext.ev.events = EPOLLIN | EPOLLERR; // Register EPOLLIN and EPOLLERR
+    bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_DNS_LOOKUP_SOCKET, this);
+    if (!ret) {
+#ifdef DEBUG
+        perror("Add DNS fd to epoll failed");
+#endif
+        close();
+        return;
+    }
+
+#ifdef DEBUG
+    printf("DNSLookup initialized with fd %d\n", fd());
+#endif
+
 }
 
 void DNSLookup::setTimeout(uint16_t newTimeout)
@@ -174,10 +187,12 @@ void DNSLookup::on_dns_read() {
 
     ssize_t len = recvfrom(m_SocketContext.fd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from_addr, &from_len);
     if (len < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
 #ifdef DEBUG
         perror("DNS recvfrom failed");
 #endif
+        reset_socket();
         return;
     }
 
