@@ -374,7 +374,10 @@ void EpollReactor::onDNSEvent(int fd, uint32_t &ev, void *ptr)
 
     if (ev & EPOLLIN) {
         pDNSLookup->on_dns_read();
+        return;
     }
+
+    printf("pDNSLookup new ev: %d\n", ev);
 }
 
 void EpollReactor::run(std::atomic<bool> &stop)

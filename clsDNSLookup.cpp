@@ -7,8 +7,9 @@
 
 DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_max_size) :
     m_pReactor(reactor),
-    m_cache_ttl_sec(cache_ttl_sec),
-    m_cache_max_size(cache_max_size) {
+    m_cache_max_size(cache_max_size),
+    m_cache_ttl_sec(cache_ttl_sec) {
+    m_Timeout = 3;
 
     load_dns_servers();
     m_dns_servers = {"8.8.8.8", "8.8.4.4"};  // fallback
@@ -33,7 +34,7 @@ DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_m
         return;
     }
 
-    m_SocketContext.ev.events = EPOLLIN | EPOLLET;
+    m_SocketContext.ev.events = EPOLLIN;// | EPOLLET;
 
     bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_DNS_LOOKUP_SOCKET, this);
     if (!ret) {
@@ -70,7 +71,17 @@ void DNSLookup::close() {
     }
 }
 
-int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data) {
+void DNSLookup::setTimeout(uint16_t newTimeout)
+{
+    m_Timeout = newTimeout;
+}
+
+void DNSLookup::setCache_ttl_sec(size_t newCache_ttl_sec)
+{
+    m_cache_ttl_sec = newCache_ttl_sec;
+}
+
+int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data, QUERY_TYPE QuryType) {
     if (!hostname || !cb) return -1;
 
     std::string host(hostname);
@@ -79,68 +90,79 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data)
     // Check cache
     auto it = m_cache_map.find(host);
     if (it != m_cache_map.end() && (now - it->second.timestamp) < m_cache_ttl_sec) {
-        std::vector<std::string> cached_ips = it->second.ips;
+        // Use A or AAAA based on what is available
+        const std::vector<std::string>& cached_ips = it->second.a_ips.empty() ? it->second.aaaa_ips : it->second.a_ips;
+        DNSLookup::QUERY_TYPE qtype = it->second.a_ips.empty() ? DNSLookup::AAAA : DNSLookup::A;
         size_t count = cached_ips.size();
-        char** ips = new char*[count];
-        for (size_t i = 0; i < count; ++i) {
-            ips[i] = new char[cached_ips[i].size() + 1];
-            strcpy(ips[i], cached_ips[i].c_str());
+        char** ips = nullptr;
+        if (count > 0) {
+            ips = new char*[count];
+            for (size_t i = 0; i < count; ++i) {
+                ips[i] = new char[cached_ips[i].size() + 1];
+                strcpy(ips[i], cached_ips[i].c_str());
+            }
         }
-        cb(hostname, ips, count, user_data);
+        printf("use cache\n");
+        cb(hostname, ips, count, qtype, user_data);
         m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), host));
         m_cache_list.push_front(host);
+
         return 0;
     }
 
-    // Generate query for A
-    uint16_t qid_a = generate_query_id();
-    DNSRequest* req_a = new DNSRequest{host, cb, user_data, qid_a, 1, now};
-    m_pending[{qid_a, 1}] = req_a;
+    if(QuryType == DNSLookup::A){
+        // Generate query for A
+        uint16_t qid_a = generate_query_id();
+        DNSRequest* req_a = new DNSRequest{host, cb, user_data, qid_a, DNSLookup::A, now};
+        m_pending[{qid_a, DNSLookup::A}] = req_a;
 
-    std::vector<uint8_t> query_a = build_dns_query(host, 1);
-    query_a[0] = qid_a >> 8;
-    query_a[1] = qid_a & 0xFF;
-
-#ifdef DEBUG
-    std::stringstream ss_a;
-    ss_a << "DNS query sent for " << hostname << " (ID " << qid_a << ", QTYPE=A): ";
-    for (size_t i = 0; i < query_a.size(); ++i) {
-        ss_a << std::hex << std::setw(2) << std::setfill('0') << (int)query_a[i] << " ";
-    }
-    printf("%s\n", ss_a.str().c_str());
-#endif
-
-    if (!send_query(query_a, qid_a)) {
-        m_pending.erase({qid_a, 1});
-        delete req_a;
-        cb(hostname, nullptr, 0, user_data);
-        return -1;
-    }
-
-    // Generate query for AAAA
-    /*
-    uint16_t qid_aaaa = generate_query_id();
-    DNSRequest* req_aaaa = new DNSRequest{host, cb, user_data, qid_aaaa, 28, now};
-    m_pending[{qid_aaaa, 28}] = req_aaaa;
-
-    std::vector<uint8_t> query_aaaa = build_dns_query(host, 28);
-    query_aaaa[0] = qid_aaaa >> 8;
-    query_aaaa[1] = qid_aaaa & 0xFF;
+        std::vector<uint8_t> query_a = build_dns_query(host, DNSLookup::A);
+        query_a[0] = qid_a >> 8;
+        query_a[1] = qid_a & 0xFF;
 
 #ifdef DEBUG
-    std::stringstream ss_aaaa;
-    ss_aaaa << "DNS query sent for " << hostname << " (ID " << qid_aaaa << ", QTYPE=AAAA): ";
-    for (size_t i = 0; i < query_aaaa.size(); ++i) {
-        ss_aaaa << std::hex << std::setw(2) << std::setfill('0') << (int)query_aaaa[i] << " ";
-    }
-    printf("%s\n", ss_aaaa.str().c_str());
+        std::stringstream ss_a;
+        ss_a << "DNS query sent for " << hostname << " (ID " << qid_a << ", QTYPE=A): ";
+        for (size_t i = 0; i < query_a.size(); ++i) {
+            ss_a << std::hex << std::setw(2) << std::setfill('0') << (int)query_a[i] << " ";
+        }
+        printf("%s\n", ss_a.str().c_str());
 #endif
 
-    if (!send_query(query_aaaa, qid_aaaa)) {
-        m_pending.erase({qid_aaaa, 28});
-        delete req_aaaa;
+        if (!send_query(query_a, qid_a)) {
+            m_pending.erase({qid_a, DNSLookup::A});
+            delete req_a;
+            cb(hostname, nullptr, 0, DNSLookup::A, user_data);
+            return -1;
+        }
     }
-    */
+
+
+
+    if(QuryType == DNSLookup::AAAA){
+        // Generate query for AAAA
+        uint16_t qid_aaaa = generate_query_id();
+        DNSRequest* req_aaaa = new DNSRequest{host, cb, user_data, qid_aaaa, DNSLookup::AAAA, now};
+        m_pending[{qid_aaaa, DNSLookup::AAAA}] = req_aaaa;
+
+        std::vector<uint8_t> query_aaaa = build_dns_query(host, DNSLookup::AAAA);
+        query_aaaa[0] = qid_aaaa >> 8;
+        query_aaaa[1] = qid_aaaa & 0xFF;
+
+#ifdef DEBUG
+        std::stringstream ss_aaaa;
+        ss_aaaa << "DNS query sent for " << hostname << " (ID " << qid_aaaa << ", QTYPE=AAAA): ";
+        for (size_t i = 0; i < query_aaaa.size(); ++i) {
+            ss_aaaa << std::hex << std::setw(2) << std::setfill('0') << (int)query_aaaa[i] << " ";
+        }
+        printf("%s\n", ss_aaaa.str().c_str());
+#endif
+
+        if (!send_query(query_aaaa, qid_aaaa)) {
+            m_pending.erase({qid_aaaa, DNSLookup::AAAA});
+            delete req_aaaa;
+        }
+    }
 
     return 0;
 }
@@ -186,16 +208,18 @@ void DNSLookup::on_dns_read() {
     }
 
     DNSRequest* req = nullptr;
-    auto it = m_pending.find({id, 1});
+    auto it = m_pending.find({id, DNSLookup::A});
     if (it == m_pending.end()) {
-        it = m_pending.find({id, 28});
+        it = m_pending.find({id, DNSLookup::AAAA});
         if (it == m_pending.end()) {
 #ifdef DEBUG
-            printf("Unknown query ID: %u\n", id);
+            printf("Unknown query ID: [%u] size:[%zu]\n", id, m_pending.size());
 #endif
+            //printf("Unknown query ID: [%u] qid:[%hu]\n", id, it->second->qid);
             return;
         }
     }
+
     req = it->second;
 
     if (rcode != 0) {
@@ -246,7 +270,7 @@ void DNSLookup::on_dns_read() {
 
     std::vector<std::string> ips;
     if (parse_dns_response(buffer, len, id, ips)) {
-        update_lru_cache(req->hostname, ips);
+        update_lru_cache(req->hostname, ips, req->qtype);
         call_callback(req, ips);
     } else {
         call_callback(req, {});
@@ -260,7 +284,7 @@ void DNSLookup::maintenance() {
     time_t now = time(nullptr);
     std::vector<std::pair<uint16_t, uint16_t>> to_remove;
     for (auto& p : m_pending) {
-        if (now - p.second->sent_time > 5) {
+        if (now - p.second->sent_time >= m_Timeout) {
 #ifdef DEBUG
             printf("DNS timeout for %s (ID %u, QTYPE=%u)\n", p.second->hostname.c_str(), p.first.first, p.first.second);
 #endif
@@ -291,7 +315,7 @@ uint16_t DNSLookup::generate_query_id() {
     return static_cast<uint16_t>(dis(gen));
 }
 
-std::vector<uint8_t> DNSLookup::build_dns_query(const std::string& hostname, uint16_t qtype) {
+std::vector<uint8_t> DNSLookup::build_dns_query(const std::string& hostname, DNSLookup::QUERY_TYPE qtype) {
     std::vector<uint8_t> packet;
     uint16_t id = 0;
     packet.push_back(id >> 8);
@@ -300,31 +324,42 @@ std::vector<uint8_t> DNSLookup::build_dns_query(const std::string& hostname, uin
     packet.push_back(0x01);
     packet.push_back(0x00);
 
-    packet.push_back(0x00); packet.push_back(0x01);
-    packet.push_back(0x00); packet.push_back(0x00);
-    packet.push_back(0x00); packet.push_back(0x00);
-    packet.push_back(0x00); packet.push_back(0x00);
+    packet.push_back(0x00);
+    packet.push_back(0x01);
+    packet.push_back(0x00);
+    packet.push_back(0x00);
+    packet.push_back(0x00);
+    packet.push_back(0x00);
+    packet.push_back(0x00);
+    packet.push_back(0x00);
 
     std::string::size_type last_pos = 0;
     std::string::size_type pos;
     while ((pos = hostname.find('.', last_pos)) != std::string::npos) {
         size_t len = pos - last_pos;
         if (len > 63) len = 63;
-        if (len == 0) { last_pos = pos + 1; continue; }
+        if (len == 0) { last_pos = pos + 1;
+            continue;
+        }
+
         packet.push_back(static_cast<uint8_t>(len));
         packet.insert(packet.end(), hostname.begin() + last_pos, hostname.begin() + pos);
         last_pos = pos + 1;
     }
+
     size_t len = hostname.size() - last_pos;
-    if (len > 63) len = 63;
+    if (len > 63)
+        len = 63;
     if (len > 0) {
         packet.push_back(static_cast<uint8_t>(len));
         packet.insert(packet.end(), hostname.begin() + last_pos, hostname.end());
     }
     packet.push_back(0);
 
-    packet.push_back(qtype >> 8); packet.push_back(qtype & 0xFF);
-    packet.push_back(0x00); packet.push_back(0x01);
+    packet.push_back(qtype >> 8);
+    packet.push_back(qtype & 0xFF);
+    packet.push_back(0x00);
+    packet.push_back(0x01);
 
     return packet;
 }
@@ -350,7 +385,7 @@ bool DNSLookup::send_query(const std::vector<uint8_t>& query, uint16_t qid) {
 #endif
         return false;
     }
-
+    //return true;///////////////////////////
     ssize_t sent = sendto(m_SocketContext.fd, pkt.data(), pkt.size(), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if (sent < 0) {
 #ifdef DEBUG
@@ -430,7 +465,7 @@ bool DNSLookup::parse_dns_response(const uint8_t* packet, size_t len, uint16_t q
             break;
         }
 
-        if (type == 1 && rdlen == 4) {  // A record
+        if (type == DNSLookup::A && rdlen == 4) {  // A record
             char ip_str[INET_ADDRSTRLEN];
             struct in_addr addr;
             memcpy(&addr.s_addr, packet + pos, 4);
@@ -440,7 +475,7 @@ bool DNSLookup::parse_dns_response(const uint8_t* packet, size_t len, uint16_t q
                 printf("Parsed A record: %s\n", ip_str);
 #endif
             }
-        } else if (type == 28 && rdlen == 16) {  // AAAA record
+        } else if (type == DNSLookup::AAAA && rdlen == 16) {  // AAAA record
             char ip_str[INET6_ADDRSTRLEN];
             struct in6_addr addr;
             memcpy(&addr, packet + pos, 16);
@@ -467,7 +502,7 @@ void DNSLookup::call_callback(DNSRequest* req, const std::vector<std::string>& i
             strcpy(ips[i], ips_vec[i].c_str());
         }
     }
-    req->cb(req->hostname.c_str(), ips, count, req->user_data);
+    req->cb(req->hostname.c_str(), ips, count, req->qtype, req->user_data);
 }
 
 void DNSLookup::free_ips(char** ips, size_t count) {
@@ -485,27 +520,43 @@ void DNSLookup::load_dns_servers() {
             std::string server = line.substr(11);
             if (!server.empty() && inet_addr(server.c_str()) != INADDR_NONE) {
                 m_dns_servers.push_back(server);
-                if (m_dns_servers.size() >= 2) break;
+                if (m_dns_servers.size() >= 2)
+                    break;
             }
         }
     }
 }
 
-void DNSLookup::update_lru_cache(const std::string& hostname, const std::vector<std::string>& ips) {
-    // Remove if exists
+void DNSLookup::update_lru_cache(const std::string& hostname, const std::vector<std::string>& ips, DNSLookup::QUERY_TYPE qtype) {
     auto it = m_cache_map.find(hostname);
     if (it != m_cache_map.end()) {
         m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), hostname));
+    } else {
+        // Evict if over max size
+        while (m_cache_list.size() >= m_cache_max_size) {
+            std::string oldest = m_cache_list.back();
+            m_cache_list.pop_back();
+            m_cache_map.erase(oldest);
+        }
     }
 
-    // Add to cache
-    m_cache_map[hostname] = {ips, time(nullptr)};
+    // Update or insert cache entry
+    if (it == m_cache_map.end()) {
+        CacheEntry entry{{}, {}, time(nullptr)};
+        if (qtype == DNSLookup::A) {
+            entry.a_ips = ips;
+        } else if (qtype == DNSLookup::AAAA) {
+            entry.aaaa_ips = ips;
+        }
+        m_cache_map[hostname] = entry;
+    } else {
+        if (qtype == DNSLookup::A) {
+            it->second.a_ips = ips;
+        } else if (qtype == DNSLookup::AAAA) {
+            it->second.aaaa_ips = ips;
+        }
+        it->second.timestamp = time(nullptr);
+    }
+
     m_cache_list.push_front(hostname);
-
-    // Evict if over max size
-    while (m_cache_list.size() > m_cache_max_size) {
-        std::string oldest = m_cache_list.back();
-        m_cache_list.pop_back();
-        m_cache_map.erase(oldest);
-    }
 }

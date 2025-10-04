@@ -83,14 +83,19 @@ TCPSocket* OnAccepted(void* p){
 #include <sys/resource.h>
 #include "clsDNSLookup.h"
 
-void cbResolve(const char *hostname, char **ips, size_t count, void *p)
+void cbResolve(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p)
 {
     if(count == 0){
-        printf("not result\n");
+        printf("type: [%u] hostname: [%s] not result\n", qtype, hostname);
     }else{
-        printf("ip: %s\n", ips[0]);
+        printf("type: [%u] hostname: [%s] ip: [%s] count[%zu]\n",qtype , hostname, ips[0], count);
     }
+
+    printf("\n");
 }
+
+Server srv(1024, 4);
+DNSLookup dnsLookup(srv.getRoundRobinShard());
 
 int main()
 {
@@ -101,7 +106,7 @@ int main()
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
 
-    Server srv(maxfd, 4);
+
     srv.setUseGarbageCollector(false);
     srv.AddNewListener(8080, "0.0.0.0");
     srv.setOnAccepted(OnAccepted, &srv);
@@ -130,21 +135,31 @@ int main()
         std::this_thread::sleep_for(std::chrono::seconds(3600));
     */
     //for(;;)
-    getchar();
-
-    DNSLookup dnsLookup(srv.getRoundRobinShard());
-
-    //dnsLookup.resolve("freetestdata.com", cbResolve, nullptr);
-    //dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr);
-    dnsLookup.resolve("direct.mojz.ir", cbResolve, nullptr);
-    getchar();
-
 
     Timer timer;
     timer.setReactor(srv.getRoundRobinShard());
-    timer.start(100, [] {
-        std::fprintf(stderr, "Periodic timer tick: %ld\n", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+    timer.start(200, [] {
+        dnsLookup.maintenance();
+        //std::fprintf(stderr, "Periodic timer tick: %ld\n", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
     });
+
+
+    dnsLookup.setTimeout(3);
+    dnsLookup.setCache_ttl_sec(1);
+
+    dnsLookup.resolve("freetestdata.com", cbResolve, nullptr);
+    dnsLookup.resolve("sh02.mojz.ir", cbResolve, nullptr);
+    dnsLookup.resolve("facebook.com", cbResolve, nullptr);
+    getchar();
+    for(;;){
+        //dnsLookup.maintenance();
+        printf("send:\n");
+        dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr, DNSLookup::AAAA);
+        getchar();
+    }
+
+
+
 
     getchar();
     timer.stop();
