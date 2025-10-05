@@ -5,7 +5,10 @@
 #include "clsGCList.h"
 #include "clsSocketList.h"
 
+#include "clsDNSLookup.h"
+
 // EpollReactor
+//class DNSLookup;
 class UDPSocket;
 class SocketList;
 class EpollReactor
@@ -33,6 +36,7 @@ public:
     void wake();
     void adoptAccepted(int m_fd);
     void setUseGarbageCollector(bool newUseGarbageCollector);
+    int getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
 
     BufferPool *bufferPool();
 
@@ -40,12 +44,13 @@ private:
     bool m_useGarbageCollector {true};
     int m_shadeID {0};
     int m_epollSocket {-1};
-    int m_wakeupFd {-1};
+    int m_wakeupFd {-1};    //baraye exit safe epoll
     int m_maxEvent {100};
     std::vector<int> m_listenerList;
     GCList<TCPSocket> m_GCList;
     SocketList *m_pConnectionList;
     BufferPool m_bufferPool;
+    DNSLookup *m_pDNSLookup;
 
     //std::unordered_map<int,SocketBaseHandle> m_ConnectionMap; // (user map as requested)
     acceptCallback m_onAcceptCallback {};

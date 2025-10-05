@@ -1,6 +1,7 @@
 #ifndef CLSDNSLOOKUP_H
 #define CLSDNSLOOKUP_H
 
+//#include "clsTCPSocket.h"
 #include <cstddef>
 #include <unordered_map>
 #include <vector>
@@ -12,9 +13,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <fstream>
+//#define DEBUG 1
 
-#include "clsEpollReactor.h"
-
+class Timer;
+class EpollReactor;
 class DNSLookup {
 public:
     enum QUERY_TYPE {
@@ -22,11 +24,11 @@ public:
         AAAA = 28
     };
 
-    typedef void (*dns_callback_t)(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *user_data);
+    typedef void (*callback_t)(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *user_data);
 
     struct DNSRequest {
         char* hostname;
-        dns_callback_t cb;
+        callback_t cb;
         void* user_data;
         uint16_t qid;
         DNSLookup::QUERY_TYPE qtype;
@@ -34,10 +36,10 @@ public:
         uint16_t retry_count;
     };
 
-    DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec = 300, size_t cache_max_size = 2000, uint16_t max_retries = 3);
+    DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec = 300, size_t cache_max_size = 2000);
     ~DNSLookup();
 
-    int resolve(const char *hostname, dns_callback_t cb, void *user_data, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
+    int resolve(const char *hostname, callback_t cb, void *user_data, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
     void on_dns_read();
     void maintenance();
     int fd() const;
@@ -46,10 +48,11 @@ public:
 
     void setTimeout(uint16_t newTimeout);
     void setCache_ttl_sec(size_t newCache_ttl_sec);
-    void setMaxRetries(uint16_t newMaxRetries); // متد جدید برای تنظیم max_retries
+    void setMaxRetries(uint16_t newMaxRetries);
 
 private:
     EpollReactor* m_pReactor;
+    Timer *m_pTimer;
     struct SocketContext m_SocketContext {};
     std::unordered_map<uint16_t, DNSRequest*> m_pending;
     uint8_t m_shared_buffer[512];
@@ -75,7 +78,7 @@ private:
     size_t m_cache_ttl_sec;
     std::vector<std::string> m_dns_servers;
     uint16_t m_Timeout;
-    uint16_t m_max_retries; // تعداد حداکثر تلاش‌ها
+    uint16_t m_max_retries;
 
     // Object Pool
     std::vector<DNSRequest> m_request_pool;

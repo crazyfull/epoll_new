@@ -1,5 +1,5 @@
 #include "clsEpollReactor.h"
-#include "clsDNSLookup.h"
+
 #include "clsSocketList.h"
 #include "clsUDPSocket.h"
 #include "clsTimer.h"
@@ -21,6 +21,11 @@ EpollReactor::EpollReactor(int id, int maxConnection, int max_events): m_shadeID
 
     struct epoll_event ev;
     //add_fd(m_wakeupFd,&ev, EPOLLIN);
+
+    m_pDNSLookup = new DNSLookup(this);
+    m_pDNSLookup->setTimeout(1);
+    m_pDNSLookup->setCache_ttl_sec(300);    //5 min cache
+    m_pDNSLookup->setMaxRetries(4);
 }
 
 EpollReactor::~EpollReactor() {
@@ -33,6 +38,10 @@ EpollReactor::~EpollReactor() {
     if(m_pConnectionList){
         delete m_pConnectionList;
         m_pConnectionList = nullptr;
+    }
+
+    if(m_pDNSLookup){
+        delete m_pDNSLookup;
     }
 }
 
@@ -284,6 +293,11 @@ bool EpollReactor::register_fd(int fd, epoll_event *pEvent, SockTypes sockType, 
 void EpollReactor::setUseGarbageCollector(bool newUseGarbageCollector)
 {
     m_useGarbageCollector = newUseGarbageCollector;
+}
+
+int EpollReactor::getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType)
+{
+    return m_pDNSLookup->resolve(hostname, callback, p, QuryType);
 }
 
 BufferPool *EpollReactor::bufferPool()

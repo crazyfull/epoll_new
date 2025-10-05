@@ -1,29 +1,40 @@
 #include "clsDNSLookup.h"
+#include "clsEpollReactor.h"
+#include "clsTimer.h"
 #include <cstdio>
 #include <cstring>
 #include <errno.h>
 #include <iomanip>
 #include <sstream>
 
-DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_max_size, uint16_t max_retries) :
+DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_max_size) :
     m_pReactor(reactor),
     m_cache_max_size(cache_max_size),
-    m_cache_ttl_sec(cache_ttl_sec),
-    m_max_retries(max_retries) {
-    m_Timeout = 3;
+    m_cache_ttl_sec(cache_ttl_sec) {
+    setTimeout(3);
+    setMaxRetries(1);
     init_request_pool(1000);
     load_dns_servers();
     m_dns_servers = {"8.8.8.8", "8.8.4.4"};
     reset_socket();
+
+    m_pTimer = new Timer;
+    m_pTimer->setReactor(reactor);
+    m_pTimer->start(200, [this] () { maintenance(); } );
 }
 
 DNSLookup::~DNSLookup() {
+    m_pTimer->stop();
+
     close();
     for (auto& p : m_pending) {
         call_callback(p.second, {});
         release_request(p.second);
     }
     m_pending.clear();
+
+    delete m_pTimer;
+
 }
 
 int DNSLookup::fd() const {
@@ -92,7 +103,7 @@ void DNSLookup::setCache_ttl_sec(size_t newCache_ttl_sec) {
 }
 
 void DNSLookup::setMaxRetries(uint16_t newMaxRetries) {
-    m_max_retries = newMaxRetries;
+    m_max_retries = newMaxRetries -1;
 }
 
 void DNSLookup::init_request_pool(size_t pool_size) {
@@ -117,8 +128,9 @@ void DNSLookup::release_request(DNSRequest* req) {
     m_free_requests.push_back(req);
 }
 
-int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data, QUERY_TYPE QuryType) {
-    if (!hostname || !cb) return -1;
+int DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUERY_TYPE QuryType) {
+    if (!hostname || !cb)
+        return -1;
 
     std::string host(hostname);
     time_t now = time(nullptr);
@@ -166,7 +178,8 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data,
     if (QuryType == DNSLookup::AAAA) {
         uint16_t qid_aaaa = generate_query_id();
         DNSRequest* req_aaaa = acquire_request();
-        if (!req_aaaa) return -1;
+        if (!req_aaaa)
+            return -1;
         req_aaaa->hostname = new char[strlen(hostname) + 1];
         strcpy(req_aaaa->hostname, hostname);
         *req_aaaa = {req_aaaa->hostname, cb, user_data, qid_aaaa, DNSLookup::AAAA, now, 0};
@@ -210,6 +223,8 @@ void DNSLookup::on_dns_read() {
         }
         return;
     }
+
+    //printf("recvfrom:[%zu]\n", len);
 
     if (len < 12) {
 #ifdef DEBUG
@@ -297,6 +312,7 @@ void DNSLookup::on_dns_read() {
 }
 
 void DNSLookup::maintenance() {
+    //printf("DNSLookup::maintenance()\n");
     time_t now = time(nullptr);
     std::vector<uint16_t> to_remove;
     for (auto& p : m_pending) {
@@ -399,8 +415,10 @@ bool DNSLookup::send_query(const std::vector<uint8_t>& query, uint16_t qid) {
 #endif
         return false;
     }
-    printf("sendto:\n");
+    //printf("sendto:\n");
     ssize_t sent = sendto(m_SocketContext.fd, m_shared_buffer, query.size(), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    printf("sendto[%zu]\n", sent);
+
     if (sent < 0) {
 #ifdef DEBUG
         perror("DNS sendto failed");

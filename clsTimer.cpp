@@ -20,6 +20,7 @@ bool Timer::start(int interval_ms, Callback cb) {
     return startInternal(interval_ms, std::move(cb), false);
 }
 
+
 bool Timer::singleShot(int interval_ms, Callback cb) {
     return startInternal(interval_ms, std::move(cb), true);
 }

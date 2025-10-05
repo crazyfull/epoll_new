@@ -8,6 +8,7 @@
 #include <chrono>
 #include <sys/epoll.h>
 #include <string>
+
 // SocketBase
 
 // ============================== SocketContext (low-level) ====================
@@ -100,7 +101,7 @@ private:
     //CloseCallback close_cb_{};
     //EpollModCallback epoll_mod_cb_{};
     void handleOnData(const uint8_t * d, size_t n);
-    static void connect_cb(const char *hostname, char **ips, size_t count, void *p);
+    static void connect_cb(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p);
 
 };
 

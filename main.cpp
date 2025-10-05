@@ -95,7 +95,7 @@ void cbResolve(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_
 }
 
 Server srv(1024, 4);
-DNSLookup dnsLookup(srv.getRoundRobinShard());
+//DNSLookup dnsLookup(srv.getRoundRobinShard());
 
 int main()
 {
@@ -136,44 +136,36 @@ int main()
     */
     //for(;;)
 
-    Timer timer;
-    timer.setReactor(srv.getRoundRobinShard());
-    timer.start(200, [] {
-        dnsLookup.maintenance();
-        //std::fprintf(stderr, "Periodic timer tick: %ld\n", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-    });
 
 
+    srv.getRoundRobinShard()->getIPbyName("freetestdata.com", cbResolve, nullptr);
+
+    /*
     dnsLookup.setTimeout(3);
     dnsLookup.setCache_ttl_sec(1);
+    dnsLookup.setMaxRetries(1);
+
 
     dnsLookup.resolve("freetestdata.com", cbResolve, nullptr);
     dnsLookup.resolve("sh02.mojz.ir", cbResolve, nullptr);
+
     dnsLookup.resolve("facebook.com", cbResolve, nullptr);
+getchar();
+    dnsLookup.reset_socket();
+*/
     getchar();
 
-    Timer timer2;
-    timer2.setReactor(srv.getRoundRobinShard());
-    timer2.start(1000, [] {
-        dnsLookup.resolve("freetestdata.com", cbResolve, nullptr, DNSLookup::A);
-    });
 
 
     for(;;){
         //dnsLookup.maintenance();
         printf("resolve:\n");
-        dnsLookup.resolve("sh02.mojz.ir", cbResolve, nullptr, DNSLookup::A);
+        srv.getRoundRobinShard()->getIPbyName("sv1.mojz.ir", cbResolve, nullptr, DNSLookup::A);
         getchar();
     }
 
 
-
-
-    getchar();
-    timer.stop();
-
     //connect
-
 
     //for(int i = 0; i < 1;i++){
 

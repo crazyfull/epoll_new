@@ -191,7 +191,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     close();
 }
 
-void TCPSocket::connect_cb(const char *hostname, char **ips, size_t count, void *p)
+void TCPSocket::connect_cb(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p)
 {
     TCPSocket *pSocketBase = static_cast<TCPSocket*>(p);
     if(!pSocketBase){
@@ -211,7 +211,10 @@ bool TCPSocket::connectTo(const std::string &host, uint16_t port)
 
     printf("resolve [%s]\n", host.c_str());
     m_SocketContext.port = port;
-    return false;//DNSLookup::resolve(host.c_str(), connect_cb, this) == 0;
+
+   // m_pReactor->getIPbyName(host.c_str(), connect_cb, this);
+
+    return DNSLookup::resolve(host.c_str(), connect_cb, this) == 0;
 }
 
 
