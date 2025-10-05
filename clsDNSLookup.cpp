@@ -5,15 +5,15 @@
 #include <iomanip>
 #include <sstream>
 
-DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_max_size) :
+DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_max_size, uint16_t max_retries) :
     m_pReactor(reactor),
     m_cache_max_size(cache_max_size),
-    m_cache_ttl_sec(cache_ttl_sec) {
+    m_cache_ttl_sec(cache_ttl_sec),
+    m_max_retries(max_retries) {
     m_Timeout = 3;
-    init_request_pool(1000); // pool size
+    init_request_pool(1000);
     load_dns_servers();
-    //m_dns_servers = {"8.8.8.8", "8.8.4.4"}; // fallback
-    m_dns_servers = {"192.168.1.1"};
+    m_dns_servers = {"8.8.8.8", "8.8.4.4"};
     reset_socket();
 }
 
@@ -46,7 +46,7 @@ void DNSLookup::reset_socket() {
     printf("Socket error detected: %s\n", strerror(error));
 #endif
 
-    close(); // Close existing socket if any
+    close();
 
     m_SocketContext.fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (m_SocketContext.fd == -1) {
@@ -91,6 +91,10 @@ void DNSLookup::setCache_ttl_sec(size_t newCache_ttl_sec) {
     m_cache_ttl_sec = newCache_ttl_sec;
 }
 
+void DNSLookup::setMaxRetries(uint16_t newMaxRetries) {
+    m_max_retries = newMaxRetries;
+}
+
 void DNSLookup::init_request_pool(size_t pool_size) {
     m_request_pool.resize(pool_size);
     for (auto& req : m_request_pool) {
@@ -100,7 +104,7 @@ void DNSLookup::init_request_pool(size_t pool_size) {
 
 DNSLookup::DNSRequest* DNSLookup::acquire_request() {
     if (m_free_requests.empty()) {
-        return nullptr; // یا افزایش اندازه pool
+        return nullptr;
     }
     DNSRequest* req = m_free_requests.front();
     m_free_requests.pop_front();
@@ -133,6 +137,7 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data,
                 strcpy(ips[i], cached_ips[i].c_str());
             }
         }
+
         printf("use cache\n");
         cb(hostname, ips, count, qtype, user_data);
         m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), host));
@@ -146,7 +151,7 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data,
         if (!req_a) return -1;
         req_a->hostname = new char[strlen(hostname) + 1];
         strcpy(req_a->hostname, hostname);
-        *req_a = {req_a->hostname, cb, user_data, qid_a, DNSLookup::A, now};
+        *req_a = {req_a->hostname, cb, user_data, qid_a, DNSLookup::A, now, 0};
         m_pending[qid_a] = req_a;
 
         std::vector<uint8_t> query_a = build_dns_query(hostname, DNSLookup::A);
@@ -164,7 +169,7 @@ int DNSLookup::resolve(const char *hostname, dns_callback_t cb, void *user_data,
         if (!req_aaaa) return -1;
         req_aaaa->hostname = new char[strlen(hostname) + 1];
         strcpy(req_aaaa->hostname, hostname);
-        *req_aaaa = {req_aaaa->hostname, cb, user_data, qid_aaaa, DNSLookup::AAAA, now};
+        *req_aaaa = {req_aaaa->hostname, cb, user_data, qid_aaaa, DNSLookup::AAAA, now, 0};
         m_pending[qid_aaaa] = req_aaaa;
 
         std::vector<uint8_t> query_aaaa = build_dns_query(hostname, DNSLookup::AAAA);
@@ -185,22 +190,26 @@ void DNSLookup::on_dns_read() {
 
     ssize_t len = recvfrom(m_SocketContext.fd, m_shared_buffer, sizeof(m_shared_buffer), 0, (struct sockaddr*)&from_addr, &from_len);
     if (len < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
 #ifdef DEBUG
         perror("DNS recvfrom failed");
 #endif
         reset_socket();
+        // تلاش مجدد برای تمام درخواست‌های در حال انتظار
+        for (auto& p : m_pending) {
+            if (p.second->retry_count < m_max_retries) {
+                p.second->retry_count++;
+                p.second->sent_time = time(nullptr);
+                std::vector<uint8_t> query = build_dns_query(p.second->hostname, p.second->qtype);
+                send_query(query, p.second->qid);
+#ifdef DEBUG
+                printf("Retry %u for %s (ID %u, QTYPE=%u)\n", p.second->retry_count, p.second->hostname, p.second->qid, p.second->qtype);
+#endif
+            }
+        }
         return;
     }
-
-#ifdef DEBUG
-    std::stringstream ss;
-    ss << "DNS response received (len=" << len << "): ";
-    for (ssize_t i = 0; i < len; ++i) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << (int)m_shared_buffer[i] << " ";
-    }
-    printf("%s\n", ss.str().c_str());
-#endif
 
     if (len < 12) {
 #ifdef DEBUG
@@ -240,6 +249,17 @@ void DNSLookup::on_dns_read() {
         }
         printf("DNS error for %s (QTYPE=%u): RCODE=%u (%s)\n", req->hostname, req->qtype, rcode, rcode_str);
 #endif
+        if (req->retry_count < m_max_retries) {
+            req->retry_count++;
+            req->sent_time = time(nullptr);
+            std::vector<uint8_t> query = build_dns_query(req->hostname, req->qtype);
+            if (send_query(query, req->qid)) {
+#ifdef DEBUG
+                printf("Retry %u for %s (ID %u, QTYPE=%u)\n", req->retry_count, req->hostname, req->qid, req->qtype);
+#endif
+                return;
+            }
+        }
         call_callback(req, {});
         release_request(req);
         m_pending.erase(it);
@@ -258,6 +278,17 @@ void DNSLookup::on_dns_read() {
         update_lru_cache(req->hostname, ips, req->qtype);
         call_callback(req, ips);
     } else {
+        if (req->retry_count < m_max_retries) {
+            req->retry_count++;
+            req->sent_time = time(nullptr);
+            std::vector<uint8_t> query = build_dns_query(req->hostname, req->qtype);
+            if (send_query(query, req->qid)) {
+#ifdef DEBUG
+                printf("Retry %u for %s (ID %u, QTYPE=%u)\n", req->retry_count, req->hostname, req->qid, req->qtype);
+#endif
+                return;
+            }
+        }
         call_callback(req, {});
     }
 
@@ -270,8 +301,19 @@ void DNSLookup::maintenance() {
     std::vector<uint16_t> to_remove;
     for (auto& p : m_pending) {
         if (now - p.second->sent_time >= m_Timeout) {
+            if (p.second->retry_count < m_max_retries) {
+                p.second->retry_count++;
+                p.second->sent_time = now;
+                std::vector<uint8_t> query = build_dns_query(p.second->hostname, p.second->qtype);
+                if (send_query(query, p.second->qid)) {
 #ifdef DEBUG
-            printf("DNS timeout for %s (ID %u, QTYPE=%u)\n", p.second->hostname, p.first, p.second->qtype);
+                    printf("Retry %u for %s (ID %u, QTYPE=%u) due to timeout\n", p.second->retry_count, p.second->hostname, p.first, p.second->qtype);
+#endif
+                    continue;
+                }
+            }
+#ifdef DEBUG
+            printf("DNS timeout for %s (ID %u, QTYPE=%u, retries=%u)\n", p.second->hostname, p.first, p.second->qtype, p.second->retry_count);
 #endif
             call_callback(p.second, {});
             to_remove.push_back(p.first);
@@ -335,7 +377,8 @@ std::vector<uint8_t> DNSLookup::build_dns_query(const char* hostname, QUERY_TYPE
 }
 
 bool DNSLookup::send_query(const std::vector<uint8_t>& query, uint16_t qid) {
-    if (query.size() > sizeof(m_shared_buffer)) return false;
+    if (query.size() > sizeof(m_shared_buffer))
+        return false;
     memcpy(m_shared_buffer, query.data(), query.size());
     m_shared_buffer[0] = qid >> 8;
     m_shared_buffer[1] = qid & 0xFF;
@@ -356,6 +399,7 @@ bool DNSLookup::send_query(const std::vector<uint8_t>& query, uint16_t qid) {
 #endif
         return false;
     }
+    printf("sendto:\n");
     ssize_t sent = sendto(m_SocketContext.fd, m_shared_buffer, query.size(), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if (sent < 0) {
 #ifdef DEBUG
@@ -490,8 +534,7 @@ void DNSLookup::load_dns_servers() {
             std::string server = line.substr(11);
             if (!server.empty() && inet_addr(server.c_str()) != INADDR_NONE) {
                 m_dns_servers.push_back(server);
-                if (m_dns_servers.size() >= 2)
-                    break;
+                if (m_dns_servers.size() >= 2) break;
             }
         }
     }

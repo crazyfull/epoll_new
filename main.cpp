@@ -151,10 +151,18 @@ int main()
     dnsLookup.resolve("sh02.mojz.ir", cbResolve, nullptr);
     dnsLookup.resolve("facebook.com", cbResolve, nullptr);
     getchar();
+
+    Timer timer2;
+    timer2.setReactor(srv.getRoundRobinShard());
+    timer2.start(1000, [] {
+        dnsLookup.resolve("freetestdata.com", cbResolve, nullptr, DNSLookup::A);
+    });
+
+
     for(;;){
         //dnsLookup.maintenance();
-        printf("send:\n");
-        dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr, DNSLookup::A);
+        printf("resolve:\n");
+        dnsLookup.resolve("sh02.mojz.ir", cbResolve, nullptr, DNSLookup::A);
         getchar();
     }
 
