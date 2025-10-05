@@ -154,7 +154,7 @@ int main()
     for(;;){
         //dnsLookup.maintenance();
         printf("send:\n");
-        dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr, DNSLookup::AAAA);
+        dnsLookup.resolve("sv1.mojz.ir", cbResolve, nullptr, DNSLookup::A);
         getchar();
     }
 

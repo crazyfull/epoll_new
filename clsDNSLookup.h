@@ -2,10 +2,8 @@
 #define CLSDNSLOOKUP_H
 
 #include <cstddef>
-#include <map>
-#include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 #include <list>
 #include <time.h>
 #include <sys/socket.h>
@@ -14,14 +12,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <fstream>
-#include <random>
 
 #include "clsEpollReactor.h"
-//#define DEBUG 1
+#define DEBUG 1
 
 class DNSLookup {
 public:
-    enum QUERY_TYPE{
+    enum QUERY_TYPE {
         A = 1,
         AAAA = 28
     };
@@ -29,7 +26,7 @@ public:
     typedef void (*dns_callback_t)(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *user_data);
 
     struct DNSRequest {
-        std::string hostname;
+        char* hostname; // به جای std::string
         dns_callback_t cb;
         void* user_data;
         uint16_t qid;
@@ -48,15 +45,23 @@ public:
     void reset_socket();
 
     void setTimeout(uint16_t newTimeout);
-
     void setCache_ttl_sec(size_t newCache_ttl_sec);
-
 
 private:
     EpollReactor* m_pReactor;
     struct SocketContext m_SocketContext {};
+    std::unordered_map<uint16_t, DNSRequest*> m_pending; // به جای std::map
+    uint8_t m_shared_buffer[512];
+    uint8_t m_dns_header[12] = {
+        0x00, 0x00, // qid
+        0x01, 0x00, // flags
+        0x00, 0x01, // qdcount
+        0x00, 0x00, // ancount
+        0x00, 0x00, // nscount
+        0x00, 0x00  // arcount
+    };
 
-    std::map<std::pair<uint16_t, uint16_t>, DNSRequest*> m_pending;  // key: {qid, qtype}
+    uint16_t m_next_qid = 1; // برای تولید qid ترتیبی
 
     struct CacheEntry {
         std::vector<std::string> a_ips;    // IPv4 addresses
@@ -71,8 +76,16 @@ private:
     std::vector<std::string> m_dns_servers;
     uint16_t m_Timeout;
 
+    // Object Pool
+    std::vector<DNSRequest> m_request_pool;
+    std::list<DNSRequest*> m_free_requests;
+
+    void init_request_pool(size_t pool_size);
+    DNSRequest* acquire_request();
+    void release_request(DNSRequest* req);
+
     uint16_t generate_query_id();
-    std::vector<uint8_t> build_dns_query(const std::string& hostname, QUERY_TYPE qtype = DNSLookup::A);
+    std::vector<uint8_t> build_dns_query(const char* hostname, QUERY_TYPE qtype = DNSLookup::A);
     bool parse_dns_response(const uint8_t* packet, size_t len, uint16_t query_id, std::vector<std::string>& ips);
     bool send_query(const std::vector<uint8_t>& query, uint16_t qid);
     void load_dns_servers();
