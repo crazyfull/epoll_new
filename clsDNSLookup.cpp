@@ -132,6 +132,53 @@ bool DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QU
     if (!hostname || !cb)
         return false;
 
+
+    //age HostAddress ipaddress bod resolve nemishe
+
+
+    // Check for IPv4
+    if (QuryType == DNSLookup::A) {
+        struct in_addr ipv4_addr;
+        if (inet_pton(AF_INET, hostname, &ipv4_addr) == 1) {
+            size_t count = 1;
+            char** ips = new char*[count];
+            ips[0] = new char[strlen(hostname) + 1];
+            strcpy(ips[0], hostname);
+#ifdef DEBUG
+            printf("Hostname is IPv4: %s\n", hostname);
+#endif
+            cb(hostname, ips, count, QuryType, user_data);
+            free_ips(ips, count);
+            return true;
+        }
+    }
+
+
+    // Check for IPv6
+    if (QuryType == DNSLookup::AAAA) {
+        struct in6_addr ipv6_addr;
+        if (inet_pton(AF_INET6, hostname, &ipv6_addr) == 1) {
+            size_t count = 1;
+            char** ips = new char*[count];
+            ips[0] = new char[INET6_ADDRSTRLEN];
+            if (inet_ntop(AF_INET6, &ipv6_addr, ips[0], INET6_ADDRSTRLEN)) {
+#ifdef DEBUG
+                printf("Hostname is IPv6: %s\n", hostname);
+#endif
+                cb(hostname, ips, count, QuryType, user_data);
+                free_ips(ips, count);
+                return true;
+            } else {
+                // In case inet_ntop fails
+                free_ips(ips, count);
+                return false;
+            }
+        }
+    }
+
+
+
+
     std::string host(hostname);
     time_t now = time(nullptr);
 
@@ -152,6 +199,7 @@ bool DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QU
 
         printf("use cache\n");
         cb(hostname, ips, count, qtype, user_data);
+        free_ips(ips, count);
         m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), host));
         m_cache_list.push_front(host);
         return true;
@@ -537,14 +585,19 @@ void DNSLookup::call_callback(DNSRequest* req, const std::vector<std::string>& i
             strcpy(ips[i], ips_vec[i].c_str());
         }
     }
+
     req->cb(req->hostname, ips, count, req->qtype, req->user_data);
+    free_ips(ips, count);
 }
 
 void DNSLookup::free_ips(char** ips, size_t count) {
+
     for (size_t i = 0; i < count; ++i) {
-        delete[] ips[i];
+            delete[] ips[i];
     }
-    delete[] ips;
+
+    if(ips == nullptr)
+        delete[] ips;
 }
 
 void DNSLookup::load_dns_servers() {

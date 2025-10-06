@@ -17,14 +17,16 @@ public:
     void onConnected() override {
         std::printf("onConnected %d\n", fd());
 
+        return;
         //std::string pck = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+";
 
         /**/
         //http://ipv4.download.thinkbroadband.com:8080/5MB.zip
         //http://freetestdata.com/wp-content/uploads/2022/02/Free_Test_Data_1MB_JPG.jpg
 
-        std::string pck = "GET /wp-content/uploads/2022/02/Free_Test_Data_1MB_JPG.jpg HTTP/1.1\r\n"
-                          "Host: freetestdata.com\r\n"
+        std::string pck = "GET /docker/udpgw HTTP/1.1\r\n"
+                          "Host: 51.195.150.84\r\n"
+                          //"connection: close\r\n"
                           "\r\n";
 
         send(pck.c_str(), pck.length());
@@ -52,15 +54,26 @@ public:
     }
 
 private:
+    bool fisrt = true;
     // non-virtual hot-path implementation
     void onDataImpl(const uint8_t *data, size_t length)
     {
-        if(length < 650){
-            std::printf("onDataImpl[%s]\n", data);
-        }else{
-            std::printf("onDataImpl len[%zu]\n", length);
-        }
 
+        std::printf("onDataImpl len[%zu]\n", length);
+        /*
+        if(fisrt){
+            std::printf("onDataImpl[%s] len[%zu]\n", data, length);
+            fisrt = false;
+        }else{
+            //
+        }
+*/
+        //581   1762968 [1763563]
+
+        //http://dl.mojz.ir/docker/radiussh.tar.gz
+        //http://51.195.150.84/docker/RadiuSSH
+
+        //46144932  [46145617]
 
         //echo
         send(data, length);
@@ -171,8 +184,8 @@ getchar();
 
     WsEcho* outbound = new WsEcho();
     outbound->setReactor(srv.getRoundRobinShard());
-    outbound->connectTo("freetestdata.com", 80);
-    //outbound->connectTo("127.0.0.1", 8080);
+    //outbound->connectTo("51.195.150.84", 80);
+    outbound->connectTo("51.195.150.84", 5001);
     //}
 
     getchar();
