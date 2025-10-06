@@ -152,7 +152,7 @@ int main()
     dnsLookup.resolve("facebook.com", cbResolve, nullptr);
 getchar();
     dnsLookup.reset_socket();
-*/
+
     getchar();
 
 
@@ -163,7 +163,7 @@ getchar();
         srv.getRoundRobinShard()->getIPbyName("sv1.mojz.ir", cbResolve, nullptr, DNSLookup::A);
         getchar();
     }
-
+*/
 
     //connect
 

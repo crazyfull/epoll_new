@@ -2,6 +2,7 @@
 #define CLSDNSLOOKUP_H
 
 //#include "clsTCPSocket.h"
+#include "SocketContext.h"
 #include <cstddef>
 #include <unordered_map>
 #include <vector>
@@ -39,7 +40,7 @@ public:
     DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec = 300, size_t cache_max_size = 2000);
     ~DNSLookup();
 
-    int resolve(const char *hostname, callback_t cb, void *user_data, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
+    bool resolve(const char *hostname, callback_t cb, void *user_data, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
     void on_dns_read();
     void maintenance();
     int fd() const;

@@ -212,9 +212,7 @@ bool TCPSocket::connectTo(const std::string &host, uint16_t port)
     printf("resolve [%s]\n", host.c_str());
     m_SocketContext.port = port;
 
-   // m_pReactor->getIPbyName(host.c_str(), connect_cb, this);
-
-    return DNSLookup::resolve(host.c_str(), connect_cb, this) == 0;
+    return m_pReactor->getIPbyName(host.c_str(), connect_cb, this);
 }
 
 

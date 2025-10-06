@@ -5,27 +5,10 @@
 #include "epoll.h"
 #include <functional>
 #include <memory>
-#include <chrono>
 #include <sys/epoll.h>
 #include <string>
-
-// SocketBase
-
-// ============================== SocketContext (low-level) ====================
-// Owns fd, rw buffers, and queue; used via composition by high-level handlers.
-struct SocketContext
-{
-    int fd {-1 };
-    uint16_t port;
-    char *rBuffer { nullptr };
-    struct epoll_event ev {};
-    size_t rBufferCapacity { 0 };
-    size_t rBufferLength { 0 };
-    SendQueue* writeQueue {nullptr};
-    std::chrono::steady_clock::time_point lastActive {};
-};
-
-
+#include "SocketContext.h"
+#include "clsDNSLookup.h"
 
 // ============================== SocketBase (OOP API) ======================
 // Virtual only on non-hot paths; hot-path onData via function-pointer.

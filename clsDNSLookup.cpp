@@ -128,9 +128,9 @@ void DNSLookup::release_request(DNSRequest* req) {
     m_free_requests.push_back(req);
 }
 
-int DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUERY_TYPE QuryType) {
+bool DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUERY_TYPE QuryType) {
     if (!hostname || !cb)
-        return -1;
+        return false;
 
     std::string host(hostname);
     time_t now = time(nullptr);
@@ -154,13 +154,15 @@ int DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUE
         cb(hostname, ips, count, qtype, user_data);
         m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), host));
         m_cache_list.push_front(host);
-        return 0;
+        return true;
     }
 
     if (QuryType == DNSLookup::A) {
         uint16_t qid_a = generate_query_id();
         DNSRequest* req_a = acquire_request();
-        if (!req_a) return -1;
+        if (!req_a)
+            return false;
+
         req_a->hostname = new char[strlen(hostname) + 1];
         strcpy(req_a->hostname, hostname);
         *req_a = {req_a->hostname, cb, user_data, qid_a, DNSLookup::A, now, 0};
@@ -171,7 +173,7 @@ int DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUE
             m_pending.erase(qid_a);
             release_request(req_a);
             cb(hostname, nullptr, 0, DNSLookup::A, user_data);
-            return -1;
+            return false;
         }
     }
 
@@ -179,7 +181,8 @@ int DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUE
         uint16_t qid_aaaa = generate_query_id();
         DNSRequest* req_aaaa = acquire_request();
         if (!req_aaaa)
-            return -1;
+            return false;
+
         req_aaaa->hostname = new char[strlen(hostname) + 1];
         strcpy(req_aaaa->hostname, hostname);
         *req_aaaa = {req_aaaa->hostname, cb, user_data, qid_aaaa, DNSLookup::AAAA, now, 0};
@@ -190,11 +193,11 @@ int DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QUE
             m_pending.erase(qid_aaaa);
             release_request(req_aaaa);
             cb(hostname, nullptr, 0, DNSLookup::AAAA, user_data);
-            return -1;
+            return false;
         }
     }
 
-    return 0;
+    return true;
 }
 
 void DNSLookup::on_dns_read() {

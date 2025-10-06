@@ -295,7 +295,7 @@ void EpollReactor::setUseGarbageCollector(bool newUseGarbageCollector)
     m_useGarbageCollector = newUseGarbageCollector;
 }
 
-int EpollReactor::getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType)
+bool EpollReactor::getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType)
 {
     return m_pDNSLookup->resolve(hostname, callback, p, QuryType);
 }

@@ -36,7 +36,7 @@ public:
     void wake();
     void adoptAccepted(int m_fd);
     void setUseGarbageCollector(bool newUseGarbageCollector);
-    int getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
+    bool getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
 
     BufferPool *bufferPool();
 

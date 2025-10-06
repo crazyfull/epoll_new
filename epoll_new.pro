@@ -25,6 +25,7 @@ SOURCES += \
         tlsf.c
 
 HEADERS += \
+    SocketContext.h \
     clsBufferPool.h \
     clsDNSLookup.h \
     clsEpollReactor.h \
