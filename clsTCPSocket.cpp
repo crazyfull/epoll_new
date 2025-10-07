@@ -596,14 +596,17 @@ void TCPSocket::handleHalfClose() {
     ssize_t ret = ::recv(m_SocketContext.fd, buf, 1, MSG_PEEK | MSG_DONTWAIT);
     printf("handleHalfClose: %zd\n", ret);
     if (ret == 0) {
-        m_pendingClose = true;
+
         if (!m_SocketContext.writeQueue->empty()) {
             //printf("فعال کردن اگر لازم()\n");
-            m_pReactor->mod_add(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
+            if(m_pendingClose == false)
+                m_pReactor->mod_add(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
         } else {
             printf("handleHalfClose bytesRec == 0 close()\n");
             close();
         }
+
+        m_pendingClose = true;
     } else if (ret < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
         printf("handleHalfClose errno\n");
 
