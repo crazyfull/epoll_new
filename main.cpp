@@ -4,7 +4,7 @@
 
 #include <malloc.h>
 
-// ============================== Example: WebSocket-like handler =========
+// ============================== Example =========
 // Demonstrates inheritance only for non-hot paths + hot-path via fn pointer.
 class WsEcho: public TCPSocket
 {
@@ -188,13 +188,17 @@ getchar();
     outbound->connectTo("51.195.150.84", 5001);
     //}
 
-    getchar();
-    outbound->close();
+    /**/
+    for(;;){
+        getchar();
+        outbound->resume_reading();
+    }
 
 
 
     //end
     getchar();
+    exit(0);
 }
 
 

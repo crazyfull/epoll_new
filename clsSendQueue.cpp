@@ -46,13 +46,16 @@ bool SendQueue::empty() const {
 
 void SendQueue::pop_front() {
     if (!m_queue.empty()) {
-        printf("SendQueue::pop_front(): [%zu]\n", m_len);
+
         m_len -= m_queue.front().len;
+        //printf("SendQueue::pop_front(): [%zu]\n", m_len);
         m_pool.deallocate(m_queue.front().data);
         m_queue.pop_front();
 
         //printf("pop_front\n");
 
+    }else{
+        printf("pop_front empty\n");
     }
 }
 

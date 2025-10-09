@@ -3,7 +3,9 @@
 
 #include "clsBufferPool.h"
 #include <cstring>
+#include <deque>
 #include <list>
+//#include <list>
 
 class SendQueue {
 public:
@@ -14,7 +16,8 @@ public:
         //size_t offset = 0;
     };
 
-    using iterator = std::list<Buffer>::iterator;
+    using iterator = std::deque<Buffer>::iterator;
+    //using iterator = std::list<Buffer>::iterator;
 
     SendQueue(BufferPool& pool);
     ~SendQueue();
@@ -31,8 +34,10 @@ public:
 
 private:
 
+
     BufferPool& m_pool;
-    std::list<Buffer> m_queue;
+    //std::list<Buffer> m_queue;
+    std::deque<Buffer> m_queue;
     size_t m_len;
 };
 

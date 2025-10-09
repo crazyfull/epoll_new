@@ -103,7 +103,7 @@ void DNSLookup::setCache_ttl_sec(size_t newCache_ttl_sec) {
 }
 
 void DNSLookup::setMaxRetries(uint16_t newMaxRetries) {
-    m_max_retries = newMaxRetries -1;
+    m_max_retries = newMaxRetries;
 }
 
 void DNSLookup::init_request_pool(size_t pool_size) {

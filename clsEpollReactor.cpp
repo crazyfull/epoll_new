@@ -63,7 +63,7 @@ uint32_t EpollReactor::extract_gen(uint64_t key) {
 }
 
 
-
+/*
 bool EpollReactor::mod_add(SocketContext *pContext, uint32_t flags)
 {
     //taghirati bede ta az duble add jologiri beshe
@@ -74,30 +74,36 @@ bool EpollReactor::mod_add(SocketContext *pContext, uint32_t flags)
     }
     return true;
 }
+*/
+
+bool EpollReactor::mod_add(SocketContext *pContext, uint32_t flags)
+{
+    if (!(pContext->ev.events & flags)){
+        pContext->ev.events |= flags;
+
+        printf("mod_add() flags: %d\n", flags);
+
+        if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
+            perror("EPOLL_CTL_MOD mod_add");
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
 
 void EpollReactor::mod_remove(SocketContext *pContext, uint32_t flags)
 {
-    //taghirati bede ta az duble remove jologiri beshe
-    pContext->ev.events &= flags;
-    if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
-        perror("EPOLL_CTL_MOD mod_remove");
+    if (pContext->ev.events & flags) {
+        pContext->ev.events &= ~flags;
+
+        printf("mod_remove() flags: %d\n", flags);
+
+        if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
+            perror("EPOLL_CTL_MOD mod_remove");
+        }
     }
 }
-/*
-void EpollReactor::mod_fd(int fd, epoll_event *pEvent, uint32_t flags)
-{
-    if (flags & 0x80000000) {
-        // پرچم منفی فرض کردیم (یعنی کاربر ~ گذاشته)
-        pEvent->events &= flags;
-    } else {
-        pEvent->events |= flags;
-    }
-
-    epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, fd, pEvent);
-
-
-}
-*/
 
 void EpollReactor::del_fd(int fd,bool removeFromList) {
     epoll_ctl(m_epollSocket, EPOLL_CTL_DEL, fd, nullptr);
@@ -325,6 +331,7 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
     }
 
     if (ev & EPOLLHUP) {
+        //#mohem inja raftare gheyre hamahang ba close hast
         printf("EPOLLHUP: fd=%d\n", fd);
         if (pSockBase->getSocketContext()->writeQueue->empty()) {
             pSockBase->close();
@@ -433,7 +440,7 @@ void EpollReactor::run(std::atomic<bool> &stop)
                 continue;
             }
 
-            //printf("socketInfo type[%d]\n", socketInfo->type);
+            //printf("socketInfo type[%d] ev:[%d]\n", socketInfo->type, ev);
 
             if (socketInfo->type == IS_TCP_LISTENER) {
                 adoptAccepted(fd);
@@ -441,6 +448,7 @@ void EpollReactor::run(std::atomic<bool> &stop)
             }
 
             if (socketInfo->type == IS_TCP_SOCKET) {
+
                 onTCPEvent(fd, ev, socketInfo->socketBasePtr);
                 continue;
             }

@@ -67,6 +67,8 @@ public:
 
     SocketContext *getSocketContext() ;
 
+void pause_reading();
+void resume_reading();
 
 protected:
     OnDataFn onData_ { nullptr };
@@ -78,8 +80,8 @@ private:
     EpollReactor* m_pReactor = nullptr;
     bool m_readPaused { false };
     bool m_pendingClose { false };
-    void pause_reading();
-    void resume_reading();
+
+
 
     //CloseCallback close_cb_{};
     //EpollModCallback epoll_mod_cb_{};

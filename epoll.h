@@ -34,11 +34,15 @@
 
 static constexpr int MAX_EVENTS = 2048;             // (7) batch epoll_wait
 static constexpr int LISTEN_BACKLOG = SOMAXCONN;
-static constexpr size_t BACK_PRESSURE = 64*1024;   //1*(1024*1024); //1 MG
+static constexpr size_t BACK_PRESSURE = 512*1024;   //1*(1024*1024); //1 MG
 //static constexpr int IDLE_TIMEOUT_SEC = 30;       // (13) graceful idle GC
 
 static constexpr size_t BUFFER_POOL_SIZE = 10 * (1024*1024); //10 MG
 static constexpr size_t SLAB_SIZE = 8 * 1024;       // (4)(9) pooled buffers
+
+//static constexpr size_t HIGH_WATERMARK = 64 * 1024;
+static constexpr size_t LOW_WATERMARK = 128 * 1024;
+
 //static constexpr size_t RING_HIGH = 4 * 1024;     // (12) backpressure high بین ۵۰٪ تا ۷۵٪ ظرفیت بافر هر سوکت (مثل SLAB_SIZE) تنظیم می‌کنند
 //static constexpr size_t RING_LOW = 2 * 1024;      // (12) backpressure low
 //اگر SLAB_SIZE=64KB، تنظیم RING_HIGH=32KB و RING_LOW=16KB منطقی است.

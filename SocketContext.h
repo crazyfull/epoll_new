@@ -10,7 +10,7 @@
 struct SocketContext
 {
     int fd {-1 };
-    uint16_t port;
+    uint16_t port { 0 };;
     char *rBuffer { nullptr };
     struct epoll_event ev {};
     size_t rBufferCapacity { 0 };

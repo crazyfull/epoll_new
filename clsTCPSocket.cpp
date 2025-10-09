@@ -82,19 +82,24 @@ void TCPSocket::pause_reading() {
         return;
     printf("pause_reading()\n");
 
-    m_pReactor->mod_remove(&m_SocketContext, ~EPOLLIN); // Disable EPOLLIN
     m_readPaused = true;
+    m_pReactor->mod_remove(&m_SocketContext, EPOLLIN); // Disable EPOLLIN
+
 }
 
 void TCPSocket::resume_reading() {
+    printf("try to resume_reading() m_readPaused: %d\n", m_readPaused);
     if (!m_pReactor || !m_readPaused)
         return;
 
-    printf("resume_reading()\n");
-    m_pReactor->mod_add(&m_SocketContext,  EPOLLIN);
-    m_readPaused = false;
+    if(m_readPaused){
+        printf("resume_reading()\n");
+        if (!(m_SocketContext.ev.events & EPOLLIN)){
+            m_readPaused = false;
+            m_pReactor->mod_add(&m_SocketContext,  EPOLLIN);
+        }
+    }
 }
-
 
 /**/
 void TCPSocket::close()
@@ -230,6 +235,7 @@ void TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
 
     int sndbuf = 1 * 1024; // 16KB
     //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+    //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
 
     setReactor(reactor);
 
@@ -364,7 +370,7 @@ void TCPSocket::onWritable() {
         // اتصال موفق
         onConnected();
         // حالا EPOLLOUT رو اگر لازم نیست خاموش کن (بسته به نیاز به send اولیه)
-        m_pReactor->mod_remove(&m_SocketContext, ~EPOLLOUT);
+        m_pReactor->mod_remove(&m_SocketContext, EPOLLOUT);
         return;
     }
 
@@ -384,14 +390,24 @@ void TCPSocket::onWritable() {
         size_t batch_bytes = 0;
         for (auto it = m_SocketContext.writeQueue->begin(); it != m_SocketContext.writeQueue->end() && iov.size() < MAX_IOV; ++it) {
             size_t blen = it->len;
-            if (blen == 0) continue;
-            if (!iov.empty() && batch_bytes + blen > MAX_BATCH_BYTES) break;
+            if (blen == 0)
+                continue;
+
+            if (!iov.empty() && batch_bytes + blen > MAX_BATCH_BYTES){
+                break;
+            }
+
             iov.push_back({it->data, blen});
             batch_bytes += blen;
-            if (batch_bytes >= MAX_BATCH_BYTES) break;
+
+            if (batch_bytes >= MAX_BATCH_BYTES){
+                break;
+            }
         }
 
-        if (iov.empty()) break;
+        if (iov.empty()){
+            break;
+        }
 
         // sendmsg
         struct msghdr msg;
@@ -400,6 +416,7 @@ void TCPSocket::onWritable() {
         msg.msg_iovlen = iov.size();
 
         ssize_t bytesSent = ::sendmsg(m_SocketContext.fd, &msg, MSG_NOSIGNAL | MSG_DONTWAIT);
+        //printf("bytesSent: %zd\n", bytesSent);
         if (bytesSent > 0) {
             sndBytes += bytesSent;
             size_t remaining = static_cast<size_t>(bytesSent);
@@ -410,20 +427,28 @@ void TCPSocket::onWritable() {
                 if (remaining >= buf.len) {
                     remaining -= buf.len;
                     m_SocketContext.writeQueue->pop_front();
+
+                    printf("writeQueue->pop_front(): [%zu] ev[%d]\n", m_SocketContext.writeQueue->size(), m_SocketContext.ev.events);
                 } else {
+
                     memmove(buf.data, static_cast<char*>(buf.data) + remaining, buf.len - remaining);
                     buf.len -= remaining;
                     remaining = 0;
                 }
             }
+
+            //printf("aaaaaa(\n");
+
             continue;
         }
 
         if (bytesSent == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
+
             } else if (errno == EINTR) {
                 continue;
+
             } else {
                 perror("sendmsg");
                 close();
@@ -432,163 +457,28 @@ void TCPSocket::onWritable() {
         }
     }
 
+    printf("iov End: %zd\n", m_SocketContext.writeQueue->size());
+
     if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
         printf("End\n");
         close();
         return;
     }
 
-    if (m_SocketContext.writeQueue->empty() ) {
-        m_pReactor->mod_remove(&m_SocketContext, ~EPOLLOUT);
+    //resume
+    if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) { // تغییر از empty()
+        m_pReactor->mod_remove(&m_SocketContext, EPOLLOUT);
+        resume_reading();
+        return;
+    }
+
+    // اگر صف کاملاً خالی شد اما هنوز paused هستیم، resume کن
+    if (m_SocketContext.writeQueue->empty() && m_readPaused) {
+        printf("aaaaaa====================================================================================================(\n");
         resume_reading();
     }
+
 }
-
-/* old just use send()
-void SocketBase::onWritable() {
-    if (!m_SocketContext.writeQueue)
-        return;
-
-    while (!m_SocketContext.writeQueue->empty()) {
-        auto& buffer = m_SocketContext.writeQueue->front();
-        ssize_t bytesSent = ::send(m_SocketContext.fd, buffer.data, buffer.len, MSG_NOSIGNAL | MSG_DONTWAIT);
-
-        if (bytesSent > 0) {
-            sndBytes += bytesSent;
-            if ((size_t)bytesSent < buffer.len) {
-                // بخشی از داده ارسال شد، باقیمانده رو نگه می‌داریم
-                memmove(buffer.data, (char*)buffer.data + bytesSent, buffer.len - bytesSent);
-                buffer.len -= bytesSent;
-                break;
-            }
-
-            m_SocketContext.writeQueue->pop_front(); // ارسال کامل، آزادسازی
-            continue;
-        }
-
-        if (bytesSent == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                break;
-            }
-            close();
-            return;
-        }
-    }
-
-    if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
-        printf("End\n");
-        close(); // حالا که ارسال تمام شد، ببندیم
-        return;
-    }
-
-    if (m_SocketContext.writeQueue->empty() ) {
-        m_pReactor->mod_remove(&m_SocketContext, ~EPOLLOUT);
-        resume_reading();
-    }
-}
-//*/
-
-
-/* gpt
-void SocketBase::onWritable() {
-    if (!m_SocketContext.writeQueue)
-        return;
-
-    // safety caps
-    const size_t MAX_BATCH_BYTES = 256 * 1024; // send at most 256KB per syscall (tunable)
-#ifdef IOV_MAX
-    const size_t MAX_IOV = IOV_MAX;
-#else
-    const size_t MAX_IOV = 1024; // fallback conservative
-#endif
-
-    while (!m_SocketContext.writeQueue->empty()) {
-        // build iovec array from queue head
-        std::vector<struct iovec> iov;
-        iov.reserve(std::min<size_t>(MAX_IOV, m_SocketContext.writeQueue->count()));
-
-        size_t batch_bytes = 0;
-        // iterate over queue but don't pop yet — just construct iov until caps
-        for (auto it = m_SocketContext.writeQueue->begin(); it != m_SocketContext.writeQueue->end() && iov.size() < MAX_IOV; ++it) {
-            size_t blen = it->len;
-            if (blen == 0)
-                continue;
-            if (!iov.empty() && batch_bytes + blen > MAX_BATCH_BYTES)
-                break;
-            iov.push_back({ it->data, blen });
-            batch_bytes += blen;
-            if (batch_bytes >= MAX_BATCH_BYTES)
-                break;
-        }
-
-        if (iov.empty()) {
-            // nothing to send (shouldn't happen), break to avoid spinning
-            break;
-        }
-
-        // prepare msghdr for sendmsg so we can pass flags (MSG_NOSIGNAL)
-        struct msghdr msg;
-        memset(&msg, 0, sizeof(msg));
-        msg.msg_iov = iov.data();
-        msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iov.size());
-
-        ssize_t bytesSent = ::sendmsg(m_SocketContext.fd, &msg, MSG_NOSIGNAL | MSG_DONTWAIT);
-        if (bytesSent > 0) {
-            sndBytes += bytesSent;
-            size_t remaining = static_cast<size_t>(bytesSent);
-
-            // consume from queue according to remaining
-            while (remaining > 0 && !m_SocketContext.writeQueue->empty()) {
-                auto &buf = m_SocketContext.writeQueue->front();
-                if (remaining >= buf.len) {
-                    // fully consumed this buffer
-                    remaining -= buf.len;
-                    m_SocketContext.writeQueue->pop_front();
-                } else {
-                    memmove(buf.data, (char*)buf.data + remaining, buf.len - remaining);
-                    buf.len -= remaining;
-                    remaining = 0;
-                }
-            }
-
-            // continue to try send more if queue still has data (loop)
-            continue;
-        }
-
-        if (bytesSent == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // kernel send buffer full -> wait for next EPOLLOUT
-                break;
-            } else if (errno == EINTR) {
-                // interrupted, try again immediately
-                continue;
-            } else {
-                // fatal error
-                perror("onWritable: sendmsg error");
-                close();
-                return;
-            }
-        }
-    } // end while queue not empty
-
-    // if pending close and queue drained -> close
-    if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
-        close();
-        return;
-    }
-
-    if (m_SocketContext.writeQueue->empty()) {
-        // disable EPOLLOUT and resume reading
-        m_pReactor->mod_remove(&m_SocketContext, ~EPOLLOUT);
-        resume_reading();
-    } else {
-        // still have data: ensure EPOLLOUT is enabled (reactor may already have it),
-        // and possibly enforce backpressure (already applied in send())
-        m_pReactor->mod_add(&m_SocketContext, EPOLLOUT);
-    }
-}
-//*/
-
 
 //*/
 void TCPSocket::handleHalfClose() {
@@ -598,9 +488,11 @@ void TCPSocket::handleHalfClose() {
     if (ret == 0) {
 
         if (!m_SocketContext.writeQueue->empty()) {
-            //printf("فعال کردن اگر لازم()\n");
-            if(m_pendingClose == false)
+            printf("m_pendingClose: %d\n", m_pendingClose);
+            if(m_pendingClose == false){
                 m_pReactor->mod_add(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
+                printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
+            }
         } else {
             printf("handleHalfClose bytesRec == 0 close()\n");
             close();
