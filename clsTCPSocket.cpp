@@ -88,7 +88,7 @@ void TCPSocket::pause_reading() {
 }
 
 void TCPSocket::resume_reading() {
-    printf("try to resume_reading() m_readPaused: %d\n", m_readPaused);
+    printf("try to resume_reading() m_readPaused: %d, ev.events %u\n", m_readPaused, m_SocketContext.ev.events);
     if (!m_pReactor || !m_readPaused)
         return;
 
@@ -512,10 +512,10 @@ void TCPSocket::handleHalfClose() {
 
         if (!m_SocketContext.writeQueue->empty()) {
             printf("m_pendingClose: %d\n", m_pendingClose);
-            if(m_pendingClose == false){
+            //if(m_pendingClose == false){
                 m_pReactor->mod_add(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
                 printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
-            }
+            //}
         } else {
             printf("handleHalfClose bytesRec == 0 close()\n");
             close();

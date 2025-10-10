@@ -345,7 +345,7 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
 
     //get shutdown
     if(ev & (EPOLLRDHUP)) {
-        //printf("EPOLLRDHUP\n");
+        printf("EPOLLRDHUP\n");
         pSockBase->handleHalfClose();
     }
 
@@ -354,12 +354,12 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
     }
 
     if(ev & EPOLLIN){
-        //printf("EPOLLIN\n");
+        printf("EPOLLIN\n");
         pSockBase->onReadable();
     }
 
     if(ev & EPOLLOUT){
-        //printf("EPOLLOUT\n");
+        printf("EPOLLOUT\n");
         pSockBase->onWritable();
     }
 }
