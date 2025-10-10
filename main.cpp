@@ -181,16 +181,27 @@ getchar();
     //connect
 
     //for(int i = 0; i < 1;i++){
-
+A:
     WsEcho* outbound = new WsEcho();
     outbound->setReactor(srv.getRoundRobinShard());
     //outbound->connectTo("51.195.150.84", 80);
+
     outbound->connectTo("51.195.150.84", 5001);
+    //outbound->connectTo("192.168.1.11", 5001);
     //}
 
     /**/
     for(;;){
-        getchar();
+        char needExit = getchar();
+        if(needExit == 'e'){
+            exit(0);
+        }
+
+        if(needExit == 'r'){
+            outbound->close();
+            goto A;
+        }
+
         outbound->resume_reading();
     }
 

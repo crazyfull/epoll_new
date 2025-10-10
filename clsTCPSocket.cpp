@@ -101,6 +101,17 @@ void TCPSocket::resume_reading() {
     }
 }
 
+int TCPSocket::getErrorCode()
+{
+    // check SO_ERROR
+    int err = 0;
+    if(m_SocketContext.fd != -1){
+        socklen_t len = sizeof(err);
+        getsockopt(m_SocketContext.fd, SOL_SOCKET, SO_ERROR, &err, &len);
+    }
+    return err;
+}
+
 /**/
 void TCPSocket::close()
 {
@@ -119,7 +130,7 @@ void TCPSocket::close()
     ::shutdown(m_SocketContext.fd, SHUT_RDWR);
     ::close(m_SocketContext.fd);
     this->onClose();
-    printf("recBytes: [%d] sndBytes: [%d]\n", recBytes, sndBytes);
+    printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
     // m_pReactor->onSocketClosed(m_SocketContext.fd);
 }
 
@@ -346,20 +357,14 @@ void TCPSocket::send(const void* data, size_t len) {
 
     }
 }
+
 void TCPSocket::onWritable() {
     if (!m_SocketContext.writeQueue)
         return;
 
     // tashkhise inke darim connect mishim ya na
     if (m_SocketContext.writeQueue->empty() && !m_pendingClose) {
-        int err = 0;
-        socklen_t len = sizeof(err);
-        if (getsockopt(m_SocketContext.fd, SOL_SOCKET, SO_ERROR, &err, &len) == -1) {
-            perror("getsockopt SO_ERROR");
-            onConnectFailed();
-            close();
-            return;
-        }
+        int err = getErrorCode();
         if (err != 0) {
             printf("connect failed: %s\n", strerror(err));
             onConnectFailed();
@@ -382,7 +387,11 @@ void TCPSocket::onWritable() {
     const size_t MAX_IOV = 1024;
 #endif
 
+
+
     while (!m_SocketContext.writeQueue->empty()) {
+        printf("begin writing...\n");
+
         // ساخت iovec از queue
         std::vector<struct iovec> iov;
         iov.reserve(std::min<size_t>(MAX_IOV, m_SocketContext.writeQueue->count()));
@@ -394,6 +403,7 @@ void TCPSocket::onWritable() {
                 continue;
 
             if (!iov.empty() && batch_bytes + blen > MAX_BATCH_BYTES){
+                printf("cod 01, iov.empty:[%d], batch_bytes:[%zu]\n", iov.empty(), batch_bytes + blen);
                 break;
             }
 
@@ -401,11 +411,13 @@ void TCPSocket::onWritable() {
             batch_bytes += blen;
 
             if (batch_bytes >= MAX_BATCH_BYTES){
+                printf("cod 02\n");
                 break;
             }
         }
 
         if (iov.empty()){
+            printf("cod 03\n");
             break;
         }
 
@@ -416,7 +428,7 @@ void TCPSocket::onWritable() {
         msg.msg_iovlen = iov.size();
 
         ssize_t bytesSent = ::sendmsg(m_SocketContext.fd, &msg, MSG_NOSIGNAL | MSG_DONTWAIT);
-        //printf("bytesSent: %zd\n", bytesSent);
+        printf("bytesSent: %zd\n", bytesSent);
         if (bytesSent > 0) {
             sndBytes += bytesSent;
             size_t remaining = static_cast<size_t>(bytesSent);
@@ -428,7 +440,7 @@ void TCPSocket::onWritable() {
                     remaining -= buf.len;
                     m_SocketContext.writeQueue->pop_front();
 
-                    printf("writeQueue->pop_front(): [%zu] ev[%d]\n", m_SocketContext.writeQueue->size(), m_SocketContext.ev.events);
+                    printf("writeQueue->pop_front(): [%zu] ev[%u]\n", m_SocketContext.writeQueue->size(), m_SocketContext.ev.events);
                 } else {
 
                     memmove(buf.data, static_cast<char*>(buf.data) + remaining, buf.len - remaining);
@@ -444,6 +456,7 @@ void TCPSocket::onWritable() {
 
         if (bytesSent == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                printf("write get EAGAIN\n");
                 break;
 
             } else if (errno == EINTR) {
@@ -457,7 +470,17 @@ void TCPSocket::onWritable() {
         }
     }
 
-    printf("iov End: %zd\n", m_SocketContext.writeQueue->size());
+    printf("iov End: %zd , empty: %d\n", m_SocketContext.writeQueue->size(), m_SocketContext.writeQueue->empty());
+
+    if (!m_SocketContext.writeQueue->empty()) {
+        if (!(m_SocketContext.ev.events & EPOLLOUT)){
+            //m_pReactor->mod_add(&m_SocketContext, EPOLLOUT);
+            printf("catch error====================================================================================================(\n");
+        }
+
+    }
+
+
 
     if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
         printf("End\n");
@@ -469,12 +492,12 @@ void TCPSocket::onWritable() {
     if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) { // تغییر از empty()
         m_pReactor->mod_remove(&m_SocketContext, EPOLLOUT);
         resume_reading();
-        return;
+        //return;
     }
 
     // اگر صف کاملاً خالی شد اما هنوز paused هستیم، resume کن
     if (m_SocketContext.writeQueue->empty() && m_readPaused) {
-        printf("aaaaaa====================================================================================================(\n");
+        printf("aaaaaa-----------------------------------------(\n");
         resume_reading();
     }
 
@@ -505,12 +528,10 @@ void TCPSocket::handleHalfClose() {
         close();
     }
 
-    // چک SO_ERROR
-    int err = 0;
-    socklen_t len = sizeof(err);
-    getsockopt(m_SocketContext.fd, SOL_SOCKET, SO_ERROR, &err, &len);
+    // check socket error
+    int err = getErrorCode();
     if (err != 0) {
-        printf("Socket error: %d\n", err);
+        printf("Socket error: [%d] msg:[%s]\n", err, strerror(err));
         close();
     }
 }

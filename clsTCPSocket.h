@@ -19,8 +19,8 @@ class TCPSocket
 public:
     TCPSocket();
 
-    int recBytes = 0;
-    int sndBytes = 0;
+    uint64_t recBytes = 0;
+    uint64_t sndBytes = 0;
 
     void setReactor(EpollReactor* r);
     using OnDataFn = void(*)(TCPSocket* , const uint8_t* , size_t);     // (hot path)
@@ -69,6 +69,7 @@ public:
 
 void pause_reading();
 void resume_reading();
+int getErrorCode();
 
 protected:
     OnDataFn onData_ { nullptr };
