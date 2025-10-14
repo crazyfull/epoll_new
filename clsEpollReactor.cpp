@@ -6,7 +6,7 @@
 
 #include <malloc.h>
 
-EpollReactor::EpollReactor(int id, int maxConnection, int max_events): m_shadeID(id), m_maxEvent(max_events), m_bufferPool(BUFFER_POOL_SIZE)
+EpollReactor::EpollReactor(int id, int maxConnection, int max_events): m_reactorID(id), m_maxEvent(max_events), m_bufferPool(BUFFER_POOL_SIZE)
 {
     m_pConnectionList = new SocketList(maxConnection);
 
@@ -64,19 +64,19 @@ uint32_t EpollReactor::extract_gen(uint64_t key) {
 
 
 /*
-bool EpollReactor::mod_add(SocketContext *pContext, uint32_t flags)
+bool EpollReactor::addFlags(SocketContext *pContext, uint32_t flags)
 {
     //taghirati bede ta az duble add jologiri beshe
     pContext->ev.events |= flags;
     if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
-        perror("EPOLL_CTL_MOD mod_add");
+        perror("EPOLL_CTL_MOD addFlags");
         return false;
     }
     return true;
 }
 */
 
-bool EpollReactor::mod_add(SocketContext *pContext, uint32_t flags)
+bool EpollReactor::addFlags(SocketContext *pContext, uint32_t flags)
 {
     if (!(pContext->ev.events & flags)){
         pContext->ev.events |= flags;
@@ -92,7 +92,7 @@ bool EpollReactor::mod_add(SocketContext *pContext, uint32_t flags)
     return false;
 }
 
-void EpollReactor::mod_remove(SocketContext *pContext, uint32_t flags)
+void EpollReactor::removeFlags(SocketContext *pContext, uint32_t flags)
 {
     if (pContext->ev.events & flags) {
         pContext->ev.events &= ~flags;

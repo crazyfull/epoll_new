@@ -24,8 +24,8 @@ public:
     void setOnAccepted(acceptCallback fncallback, void *p);
     bool register_fd(int fd, epoll_event *pEvent, SockTypes sockType, void *ptr);
     //void mod_fd(int fd, epoll_event *pEvent, uint32_t flags);
-    bool mod_add(SocketContext *pContext, uint32_t flags);
-    void mod_remove(SocketContext *pContext, uint32_t flags);
+    bool addFlags(SocketContext *pContext, uint32_t flags);
+    void removeFlags(SocketContext *pContext, uint32_t flags);
     void del_fd(int fd, bool removeFromList = false);
     bool add_fd(int fd, epoll_event *pEvent, uint32_t events);
     bool add_listener(int port);
@@ -42,7 +42,7 @@ public:
 
 private:
     bool m_useGarbageCollector {true};
-    int m_shadeID {0};
+    int m_reactorID {0};
     int m_epollSocket {-1};
     int m_wakeupFd {-1};    //baraye exit safe epoll
     int m_maxEvent {100};

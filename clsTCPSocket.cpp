@@ -83,7 +83,7 @@ void TCPSocket::pause_reading() {
     printf("pause_reading()\n");
 
     m_readPaused = true;
-    m_pReactor->mod_remove(&m_SocketContext, EPOLLIN); // Disable EPOLLIN
+    m_pReactor->removeFlags(&m_SocketContext, EPOLLIN); // Disable EPOLLIN
 
 }
 
@@ -96,7 +96,7 @@ void TCPSocket::resume_reading() {
         printf("resume_reading()\n");
         if (!(m_SocketContext.ev.events & EPOLLIN)){
             m_readPaused = false;
-            m_pReactor->mod_add(&m_SocketContext,  EPOLLIN);
+            m_pReactor->addFlags(&m_SocketContext,  EPOLLIN);
         }
     }
 }
@@ -301,7 +301,7 @@ void TCPSocket::onReadable()
                 printf("bytesRec == 0 close() %zu----------------------\n", m_SocketContext.writeQueue->size());
                 if (!m_SocketContext.writeQueue->empty()) {
                     m_pendingClose = true;
-                    m_pReactor->mod_add(&m_SocketContext, EPOLLOUT);
+                    m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);
                 }else{
                     close();
                 }
@@ -352,7 +352,7 @@ void TCPSocket::send(const void* data, size_t len) {
         if (m_SocketContext.writeQueue->size() > BACK_PRESSURE) {
             pause_reading();
         }else{
-            m_pReactor->mod_add(&m_SocketContext, EPOLLOUT);
+            m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);
         }
 
     }
@@ -362,7 +362,7 @@ void TCPSocket::onWritable() {
     if (!m_SocketContext.writeQueue)
         return;
 
-    // tashkhise inke darim connect mishim ya na
+    // tashkhise inke darim connect mishim ya na #mohem
     if (m_SocketContext.writeQueue->empty() && !m_pendingClose) {
         int err = getErrorCode();
         if (err != 0) {
@@ -372,15 +372,16 @@ void TCPSocket::onWritable() {
             return;
         }
 
-        // اتصال موفق
+        // remove EPOLLOUT
+        m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
+
+        //connected sucessfully
         onConnected();
-        // حالا EPOLLOUT رو اگر لازم نیست خاموش کن (بسته به نیاز به send اولیه)
-        m_pReactor->mod_remove(&m_SocketContext, EPOLLOUT);
         return;
     }
 
     // ادامه کد اصلی برای ارسال داده‌ها (با بهبود: استفاده از sendmsg و iovec برای batch)
-    const size_t MAX_BATCH_BYTES = 256 * 1024; // tunable: max bytes per sendmsg
+    const size_t MAX_BATCH_BYTES = 256 * 1024; //256KB tunable: max bytes per sendmsg
 #ifdef IOV_MAX
     const size_t MAX_IOV = IOV_MAX;
 #else
@@ -449,8 +450,6 @@ void TCPSocket::onWritable() {
                 }
             }
 
-            //printf("aaaaaa(\n");
-
             continue;
         }
 
@@ -490,15 +489,20 @@ void TCPSocket::onWritable() {
 
     //resume
     if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) { // تغییر از empty()
-        m_pReactor->mod_remove(&m_SocketContext, EPOLLOUT);
+        m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
         resume_reading();
-        //return;
+        return;
     }
 
-    // اگر صف کاملاً خالی شد اما هنوز paused هستیم، resume کن
-    if (m_SocketContext.writeQueue->empty() && m_readPaused) {
-        printf("aaaaaa-----------------------------------------(\n");
-        resume_reading();
+    // age safe ersal khali shod flag send hazf beshe
+    // age read az ghabl pause bood resume beshe
+    if (m_SocketContext.writeQueue->empty()) {
+        m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
+        if (m_readPaused) {
+            printf("Write queue drained, resuming reading.\n");
+            resume_reading();
+        }
+        return;
     }
 
 }
@@ -513,7 +517,7 @@ void TCPSocket::handleHalfClose() {
         if (!m_SocketContext.writeQueue->empty()) {
             printf("m_pendingClose: %d\n", m_pendingClose);
             //if(m_pendingClose == false){
-                m_pReactor->mod_add(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
+                m_pReactor->addFlags(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
                 printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
             //}
         } else {
