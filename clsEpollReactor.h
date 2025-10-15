@@ -37,6 +37,7 @@ public:
     void adoptAccepted(int m_fd);
     void setUseGarbageCollector(bool newUseGarbageCollector);
     bool getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
+    void deleteLater(TCPSocket* pSockBase);
 
     BufferPool *bufferPool();
 
@@ -46,6 +47,7 @@ private:
     int m_epollSocket {-1};
     int m_wakeupFd {-1};    //baraye exit safe epoll
     int m_maxEvent {100};
+    Timer *m_pTimer;
     std::vector<int> m_listenerList;
     GCList<TCPSocket> m_GCList;
     SocketList *m_pConnectionList;

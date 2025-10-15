@@ -14,8 +14,12 @@ public:
         setOnData(&WsEcho::onDataTrampoline);
     }
 
+    ~WsEcho() {
+        std::printf("~WsEcho()\n");
+    }
+
     void onConnected() override {
-        std::printf("onConnected %d\n", fd());
+        std::printf("onConnected() fd: %d\n", fd());
 
         return;
         //std::string pck = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+";
@@ -46,7 +50,6 @@ public:
 
     void onClose() override {
         std::printf("[-] fd=%d closed\n", fd());
-        //delete this;
     }
 
     static const char * ClassName() {
@@ -73,11 +76,8 @@ private:
         //http://dl.mojz.ir/docker/radiussh.tar.gz
         //http://51.195.150.84/docker/RadiuSSH
 
-        //46144932  [46145617]
-
         //echo
         send(data, length);
-        //usleep(1000);
     }
 
     static void onDataTrampoline(TCPSocket *b, const uint8_t *d, size_t n)
@@ -151,7 +151,7 @@ int main()
 
 
 
-    srv.getRoundRobinShard()->getIPbyName("freetestdata.com", cbResolve, nullptr);
+    //srv.getRoundRobinShard()->getIPbyName("freetestdata.com", cbResolve, nullptr);
 
     /*
     dnsLookup.setTimeout(3);
@@ -186,7 +186,7 @@ A:
     outbound->setReactor(srv.getRoundRobinShard());
     //outbound->connectTo("51.195.150.84", 80);
 
-    outbound->connectTo("51.195.150.84", 5001);
+    outbound->connectTo("51.195.150.84", 80);
     //outbound->connectTo("192.168.1.11", 5001);
     //}
 

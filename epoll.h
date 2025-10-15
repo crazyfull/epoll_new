@@ -34,11 +34,11 @@
 
 static constexpr int MAX_EVENTS = 2048;             // (7) batch epoll_wait
 static constexpr int LISTEN_BACKLOG = SOMAXCONN;
-static constexpr size_t BACK_PRESSURE = 512*1024;   //1*(1024*1024); //1 MG
+static constexpr size_t BACK_PRESSURE = 256*1024;   //1*(1024*1024); //1 MG
 //static constexpr int IDLE_TIMEOUT_SEC = 30;       // (13) graceful idle GC
 
-static constexpr size_t BUFFER_POOL_SIZE = 10 * (1024*1024); //10 MG
-static constexpr size_t SLAB_SIZE = 8 * 1024;       // (4)(9) pooled buffers
+static constexpr size_t BUFFER_POOL_SIZE = 10 * (1024*1024);    //10 MG
+static constexpr size_t SLAB_SIZE = 8 * 1024;                   // 8KB socket buffer
 
 //static constexpr size_t HIGH_WATERMARK = 64 * 1024;
 static constexpr size_t LOW_WATERMARK = 128 * 1024;

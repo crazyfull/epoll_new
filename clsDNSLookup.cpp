@@ -18,13 +18,10 @@ DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_m
     m_dns_servers = {"8.8.8.8", "8.8.4.4"};
     reset_socket();
 
-    m_pTimer = new Timer;
-    m_pTimer->setReactor(reactor);
-    m_pTimer->start(200, [this] () { maintenance(); } );
+
 }
 
 DNSLookup::~DNSLookup() {
-    m_pTimer->stop();
 
     close();
     for (auto& p : m_pending) {
@@ -32,8 +29,6 @@ DNSLookup::~DNSLookup() {
         release_request(p.second);
     }
     m_pending.clear();
-
-    delete m_pTimer;
 
 }
 

@@ -53,7 +53,7 @@ public:
 
 private:
     EpollReactor* m_pReactor;
-    Timer *m_pTimer;
+
     struct SocketContext m_SocketContext {};
     std::unordered_map<uint16_t, DNSRequest*> m_pending;
     uint8_t m_shared_buffer[512];

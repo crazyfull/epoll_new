@@ -115,23 +115,29 @@ int TCPSocket::getErrorCode()
 /**/
 void TCPSocket::close()
 {
-    m_pReactor->del_fd(m_SocketContext.fd);
+    if(m_SocketContext.fd != -1){
 
-    if(m_SocketContext.rBuffer) {
-        m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
-        //::free(m_SocketContext.rBuffer);
-        m_SocketContext.rBuffer = nullptr;
+        m_pReactor->del_fd(m_SocketContext.fd, true);
+
+        if(m_SocketContext.rBuffer) {
+            m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
+            //::free(m_SocketContext.rBuffer);
+            m_SocketContext.rBuffer = nullptr;
+        }
+
+        m_SocketContext.writeQueue->clear();
+        ::shutdown(m_SocketContext.fd, SHUT_RDWR);
+        ::close(m_SocketContext.fd);
+
+        m_pReactor->deleteLater(this);
+        printf("close()\n");
+
+        this->onClose();
+        m_SocketContext.fd = -1;
+
+        printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
+        // m_pReactor->onSocketClosed(m_SocketContext.fd);
     }
-
-    m_SocketContext.writeQueue->clear();
-
-    printf("close()\n");
-
-    ::shutdown(m_SocketContext.fd, SHUT_RDWR);
-    ::close(m_SocketContext.fd);
-    this->onClose();
-    printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
-    // m_pReactor->onSocketClosed(m_SocketContext.fd);
 }
 
 void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
@@ -480,7 +486,6 @@ void TCPSocket::onWritable() {
     }
 
 
-
     if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
         printf("End\n");
         close();
@@ -488,7 +493,8 @@ void TCPSocket::onWritable() {
     }
 
     //resume
-    if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) { // تغییر از empty()
+    if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) {
+        printf("kissed LOW_WATERMARK: [%zu]\n", m_SocketContext.writeQueue->size());
         m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
         resume_reading();
         return;
@@ -517,8 +523,8 @@ void TCPSocket::handleHalfClose() {
         if (!m_SocketContext.writeQueue->empty()) {
             printf("m_pendingClose: %d\n", m_pendingClose);
             //if(m_pendingClose == false){
-                m_pReactor->addFlags(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
-                printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
+            m_pReactor->addFlags(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
+            printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
             //}
         } else {
             printf("handleHalfClose bytesRec == 0 close()\n");

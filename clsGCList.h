@@ -36,7 +36,8 @@ public:
     ~GCList() noexcept {
         flush_all();
     }
-    // آبجکت را برای حذف دیرهنگام ثبت کن (O(1))
+
+    // add object
     void retire(T* p) noexcept {
         //is not thread-safe
         m_qList.push_back(GCNode{p, now_s_coarse()});
@@ -51,6 +52,7 @@ public:
         uint32_t now_ms = now_s_coarse();
         auto it = std::next(m_qList.begin(), THRESHOLD_SIZE);// item shomare 1024
         if ((now_ms - it->createdTime) >= MAX_AGE_MS) {
+
             // tamame itemhaye ghable 1024 delete beshan chon bishtar az 10 sanie omr daran
             auto erase_end = m_qList.begin() + THRESHOLD_SIZE;
             for (auto itr = m_qList.begin(); itr != erase_end; ++itr) {
@@ -70,6 +72,7 @@ public:
         while (!m_qList.empty()) {
             T* p = m_qList.front().ptr;
             m_qList.pop_front();
+            printf("flush_all delete..................................................................................\n", m_qList.size());
             delete p;
         }
 

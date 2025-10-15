@@ -26,6 +26,10 @@ EpollReactor::EpollReactor(int id, int maxConnection, int max_events): m_reactor
     m_pDNSLookup->setTimeout(1);
     m_pDNSLookup->setCache_ttl_sec(300);    //5 min cache
     m_pDNSLookup->setMaxRetries(4);
+
+    m_pTimer = new Timer;
+    m_pTimer->setReactor(this);
+    m_pTimer->start(200, [this] () { maintenance(); });  //200 beshe
 }
 
 EpollReactor::~EpollReactor() {
@@ -43,6 +47,13 @@ EpollReactor::~EpollReactor() {
     if(m_pDNSLookup){
         delete m_pDNSLookup;
     }
+
+
+    if(m_pTimer){
+        m_pTimer->stop();
+        delete m_pTimer;
+    }
+
 }
 
 void EpollReactor::setOnAccepted(acceptCallback fncallback, void* p) {
@@ -105,7 +116,7 @@ void EpollReactor::removeFlags(SocketContext *pContext, uint32_t flags)
     }
 }
 
-void EpollReactor::del_fd(int fd,bool removeFromList) {
+void EpollReactor::del_fd(int fd, bool removeFromList) {
     epoll_ctl(m_epollSocket, EPOLL_CTL_DEL, fd, nullptr);
     if(removeFromList)
         m_pConnectionList->remove(fd);
@@ -306,6 +317,12 @@ bool EpollReactor::getIPbyName(const char *hostname, DNSLookup::callback_t callb
     return m_pDNSLookup->resolve(hostname, callback, p, QuryType);
 }
 
+void EpollReactor::deleteLater(TCPSocket *pSockBase)
+{
+    if(pSockBase)
+        m_GCList.retire(pSockBase);
+}
+
 BufferPool *EpollReactor::bufferPool()
 {
     return &m_bufferPool;
@@ -325,8 +342,9 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
         getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
         printf("EPOLLERR: fd=%d, error=%d\n", fd, err);
         pSockBase->close();
-        m_pConnectionList->remove(fd);  //#mohem in ghesmat bayad bere to close() chon zamani ke shutdown anjam mishe in event call nemishe
-        m_GCList.retire(pSockBase);     //mohem
+
+        //#mohem in ghesmat bayad bere to close() chon zamani ke shutdown anjam mishe in event call nemishe
+        //m_GCList.retire(pSockBase);     //mohem
         return;
     }
 
@@ -335,10 +353,9 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
         printf("EPOLLHUP: fd=%d\n", fd);
         if (pSockBase->getSocketContext()->writeQueue->empty()) {
             pSockBase->close();
-            m_pConnectionList->remove(fd);
-            m_GCList.retire(pSockBase);
+            //m_GCList.retire(pSockBase);
         } else {
-            pSockBase->handleHalfClose(); // تلاش برای تخلیه queue
+            pSockBase->handleHalfClose(); // khali kardane send queue
         }
         return;
     }
@@ -346,7 +363,7 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
     //get shutdown
     if(ev & (EPOLLRDHUP)) {
         printf("EPOLLRDHUP\n");
-        pSockBase->handleHalfClose();
+        pSockBase->handleHalfClose();   //#mohem inja mtmaen nistam dorost bashe
     }
 
     if(ev & (EPOLLPRI)) {
@@ -409,11 +426,10 @@ void EpollReactor::run(std::atomic<bool> &stop)
     printf("EpollReactor::run()\n");
 
     std::vector <epoll_event> evs(m_maxEvent);
-    //epoll_event evs[1000] = {{0}};
     while(!stop.load(std::memory_order_relaxed))
     {
         int n = epoll_wait(m_epollSocket, evs.data(), (int)evs.size(), 1000);
-        //int n = epoll_wait(m_epollSocket, evs, 1, 10000);
+        //printf("n %d\n", n);
 
         if(n < 0) {
             if(errno == EINTR)
@@ -480,18 +496,6 @@ void EpollReactor::run(std::atomic<bool> &stop)
 
         }
 
-        if(n == 0){
-            if(m_useGarbageCollector){
-                m_GCList.flush();
-            }else{
-                m_GCList.flush_all();
-                //malloc_trim(0);
-            }
-        }
-
-
-        // maintenance();
-
     }
 
     shutdown_all();
@@ -505,6 +509,20 @@ void EpollReactor::wake() {
 
 void EpollReactor::maintenance()
 {
+    //maintenance for timeout DNS records
+    m_pDNSLookup->maintenance();
+
+
+
+    if(m_useGarbageCollector){
+        m_GCList.flush();
+    }else{
+        m_GCList.flush_all();
+        //printf("flush_all\n");
+        //malloc_trim(0);
+    }
+
+
     // (13) idle cull
     /*
     std::vector<int> to_close;
@@ -522,7 +540,7 @@ void EpollReactor::maintenance()
     }
 
 */
-    printf("maintenance(%d)\n", time);
+    printf("maintenance(%zd)\n", (long)time);
 
     // TODO: اگر idle GC می‌خواهی، از SocketList iterate کن و با lastActive ببند.
 }
