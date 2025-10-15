@@ -4,11 +4,12 @@
 #include "clsTCPSocket.h"
 #include "clsGCList.h"
 #include "clsSocketList.h"
-
 #include "clsDNSLookup.h"
+#include "constants.h"
 
 // EpollReactor
 //class DNSLookup;
+class TimerManager;
 class UDPSocket;
 class SocketList;
 class EpollReactor
@@ -47,7 +48,10 @@ private:
     int m_epollSocket {-1};
     int m_wakeupFd {-1};    //baraye exit safe epoll
     int m_maxEvent {100};
-    Timer *m_pTimer;
+    int m_maxConnection {100};
+
+    TimerManager *m_pTimers;
+
     std::vector<int> m_listenerList;
     GCList<TCPSocket> m_GCList;
     SocketList *m_pConnectionList;
@@ -61,6 +65,7 @@ private:
     //void handle_read(int fd, SocketBase *pSockBase);
     //void handle_write(int fd, SocketBase *pSockBase);
 
+    void init();
     void maintenance();
     void shutdown_all();
 
@@ -72,7 +77,13 @@ private:
     void onTCPEvent(int fd, uint32_t &ev, void *ptr);
     void onUDPEvent(int fd, uint32_t &ev, void *ptr);
     void onTimerEvent(int fd, uint32_t &ev, void *ptr);
+    void onTimerManagerEvent(int fd, uint32_t &ev, void *ptr);
     void onDNSEvent(int fd, uint32_t &ev, void *ptr);
+
+    void checkDnsTimeouts();
+    void runGarbageCollector();
+    void checkIdleConnections();
+    void checkStalledConnections();
 };
 
 

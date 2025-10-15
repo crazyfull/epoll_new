@@ -151,7 +151,7 @@ int main()
 
 
 
-    //srv.getRoundRobinShard()->getIPbyName("freetestdata.com", cbResolve, nullptr);
+    srv.getRoundRobinShard()->getIPbyName("freetestdata.com", cbResolve, nullptr);
 
     /*
     dnsLookup.setTimeout(3);
@@ -186,8 +186,8 @@ A:
     outbound->setReactor(srv.getRoundRobinShard());
     //outbound->connectTo("51.195.150.84", 80);
 
-    outbound->connectTo("51.195.150.84", 80);
-    //outbound->connectTo("192.168.1.11", 5001);
+    //outbound->connectTo("51.195.150.84", 80);
+    outbound->connectTo("192.168.1.11", 5001);
     //}
 
     /**/

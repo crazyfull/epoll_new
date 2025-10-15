@@ -3,33 +3,12 @@
 #include "clsSocketList.h"
 #include "clsUDPSocket.h"
 #include "clsTimer.h"
-
+#include "clsTimerManager.h"
 #include <malloc.h>
 
-EpollReactor::EpollReactor(int id, int maxConnection, int max_events): m_reactorID(id), m_maxEvent(max_events), m_bufferPool(BUFFER_POOL_SIZE)
+EpollReactor::EpollReactor(int id, int maxConnection, int max_events): m_reactorID(id), m_maxEvent(max_events), m_maxConnection(maxConnection), m_bufferPool(BUFFER_POOL_SIZE)
 {
-    m_pConnectionList = new SocketList(maxConnection);
-
-    m_epollSocket = epoll_create1(EPOLL_CLOEXEC);
-    if(m_epollSocket == -1)
-        throw std::runtime_error("epoll_create1");
-
-    m_wakeupFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-
-    if(m_wakeupFd == -1)
-        throw std::runtime_error("eventfd");
-
-    struct epoll_event ev;
-    //add_fd(m_wakeupFd,&ev, EPOLLIN);
-
-    m_pDNSLookup = new DNSLookup(this);
-    m_pDNSLookup->setTimeout(1);
-    m_pDNSLookup->setCache_ttl_sec(300);    //5 min cache
-    m_pDNSLookup->setMaxRetries(4);
-
-    m_pTimer = new Timer;
-    m_pTimer->setReactor(this);
-    m_pTimer->start(200, [this] () { maintenance(); });  //200 beshe
+    init();
 }
 
 EpollReactor::~EpollReactor() {
@@ -49,11 +28,58 @@ EpollReactor::~EpollReactor() {
     }
 
 
-    if(m_pTimer){
-        m_pTimer->stop();
-        delete m_pTimer;
+    if(m_pTimers){
+        delete m_pTimers;
     }
 
+}
+
+void EpollReactor::init()
+{
+    //
+    m_pConnectionList = new SocketList(m_maxConnection);
+
+    //
+    m_epollSocket = epoll_create1(EPOLL_CLOEXEC);
+    if(m_epollSocket == -1)
+        throw std::runtime_error("epoll_create1");
+
+    //
+    m_wakeupFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if(m_wakeupFd == -1)
+        throw std::runtime_error("eventfd");
+    struct epoll_event ev;
+    //add_fd(m_wakeupFd,&ev, EPOLLIN);
+
+    //
+    m_pDNSLookup = new DNSLookup(this);
+    m_pDNSLookup->setTimeout(DNS_LOOKUP_TIMEOUT_SEC);
+    m_pDNSLookup->setCache_ttl_sec(DNS_CACHE_TTL_SEC);
+    m_pDNSLookup->setMaxRetries(DNS_MAX_RETRIES);
+
+    //
+    m_pTimers = new TimerManager;
+    m_pTimers->setReactor(this);
+
+    //Managing IDLE Connections
+    m_pTimers->addTimer(IDLE_CONNECTION_INTERVAL_MS, [this] () {
+        maintenance();
+    });
+
+    //Managing STALLED Connections
+    m_pTimers->addTimer(STALLED_CONNECTION_INTERVAL_MS, [this] () {
+        maintenance();
+    });
+
+    //DNS timeout timer
+    m_pTimers->addTimer(DNS_TIMEOUT_INTERVAL_MS, [this] {
+        this->checkDnsTimeouts();
+    });
+
+    //Garbage collector timer
+    m_pTimers->addTimer(GARBAGE_COLLECTOR_INTERVAL_MS, [this] {
+        this->runGarbageCollector();
+    });
 }
 
 void EpollReactor::setOnAccepted(acceptCallback fncallback, void* p) {
@@ -72,20 +98,6 @@ int EpollReactor::extract_fd(uint64_t key) {
 uint32_t EpollReactor::extract_gen(uint64_t key) {
     return static_cast<uint32_t>(key >> 32);
 }
-
-
-/*
-bool EpollReactor::addFlags(SocketContext *pContext, uint32_t flags)
-{
-    //taghirati bede ta az duble add jologiri beshe
-    pContext->ev.events |= flags;
-    if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
-        perror("EPOLL_CTL_MOD addFlags");
-        return false;
-    }
-    return true;
-}
-*/
 
 bool EpollReactor::addFlags(SocketContext *pContext, uint32_t flags)
 {
@@ -328,6 +340,8 @@ BufferPool *EpollReactor::bufferPool()
     return &m_bufferPool;
 }
 
+
+
 void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
     TCPSocket* pSockBase = static_cast<TCPSocket*>(ptr);
     if(!pSockBase){
@@ -401,6 +415,20 @@ void EpollReactor::onTimerEvent(int fd, uint32_t &ev, void *ptr)
     }
 }
 
+void EpollReactor::onTimerManagerEvent(int fd, uint32_t &ev, void *ptr)
+{
+    TimerManager* pTimerm = static_cast<TimerManager*>(ptr);
+    if(!pTimerm){
+        printf("pTimer manager null\n");
+        ::close(fd);
+        return;
+    }
+
+    if (ev & EPOLLIN) {
+        pTimerm->onTick();
+    }
+}
+
 void EpollReactor::onDNSEvent(int fd, uint32_t &ev, void *ptr)
 {
     DNSLookup *pDNSLookup = static_cast<DNSLookup*>(ptr);
@@ -419,6 +447,22 @@ void EpollReactor::onDNSEvent(int fd, uint32_t &ev, void *ptr)
     }
 
     //printf("pDNSLookup new ev: %d\n", ev);
+}
+
+void EpollReactor::checkDnsTimeouts()
+{
+    m_pDNSLookup->maintenance();
+}
+
+void EpollReactor::runGarbageCollector()
+{
+    if(m_useGarbageCollector){
+        m_GCList.flush();
+    }else{
+        m_GCList.flush_all();
+        printf("flush_all\n");
+        //malloc_trim(0);
+    }
 }
 
 void EpollReactor::run(std::atomic<bool> &stop)
@@ -479,6 +523,12 @@ void EpollReactor::run(std::atomic<bool> &stop)
                 continue;
             }
 
+            if (socketInfo->type == IS_TIMER_MANAGER_SOCKET) {
+                onTimerManagerEvent(fd, ev, socketInfo->socketBasePtr);
+                continue;
+            }
+
+
             if (socketInfo->type == IS_DNS_LOOKUP_SOCKET) {
                 onDNSEvent(fd, ev, socketInfo->socketBasePtr);
                 continue;
@@ -509,19 +559,6 @@ void EpollReactor::wake() {
 
 void EpollReactor::maintenance()
 {
-    //maintenance for timeout DNS records
-    m_pDNSLookup->maintenance();
-
-
-
-    if(m_useGarbageCollector){
-        m_GCList.flush();
-    }else{
-        m_GCList.flush_all();
-        //printf("flush_all\n");
-        //malloc_trim(0);
-    }
-
 
     // (13) idle cull
     /*
@@ -540,7 +577,7 @@ void EpollReactor::maintenance()
     }
 
 */
-    printf("maintenance(%zd)\n", (long)time);
+   // printf("maintenance(%zd)\n", (long)time);
 
     // TODO: اگر idle GC می‌خواهی، از SocketList iterate کن و با lastActive ببند.
 }
