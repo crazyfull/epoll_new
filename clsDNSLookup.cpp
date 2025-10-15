@@ -15,7 +15,10 @@ DNSLookup::DNSLookup(EpollReactor* reactor, size_t cache_ttl_sec, size_t cache_m
     setMaxRetries(1);
     init_request_pool(1000);
     load_dns_servers();
-    m_dns_servers = {"8.8.8.8", "8.8.4.4"};
+
+    if (m_dns_servers.empty()) {
+        m_dns_servers = {"8.8.8.8", "8.8.4.4"};
+    }
     reset_socket();
 
 
@@ -255,6 +258,7 @@ void DNSLookup::on_dns_read() {
         perror("DNS recvfrom failed");
 #endif
         reset_socket();
+
         // تلاش مجدد برای تمام درخواست‌های در حال انتظار
         for (auto& p : m_pending) {
             if (p.second->retry_count < m_max_retries) {
@@ -358,7 +362,6 @@ void DNSLookup::on_dns_read() {
 }
 
 void DNSLookup::maintenance() {
-    //printf("DNSLookup::maintenance()\n");
     time_t now = time(nullptr);
     std::vector<uint16_t> to_remove;
     for (auto& p : m_pending) {
@@ -461,9 +464,8 @@ bool DNSLookup::send_query(const std::vector<uint8_t>& query, uint16_t qid) {
 #endif
         return false;
     }
-    //printf("sendto:\n");
     ssize_t sent = sendto(m_SocketContext.fd, m_shared_buffer, query.size(), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
-    printf("sendto[%zu]\n", sent);
+   // printf("sendto[%zu]\n", sent);
 
     if (sent < 0) {
 #ifdef DEBUG
@@ -603,7 +605,8 @@ void DNSLookup::load_dns_servers() {
             std::string server = line.substr(11);
             if (!server.empty() && inet_addr(server.c_str()) != INADDR_NONE) {
                 m_dns_servers.push_back(server);
-                if (m_dns_servers.size() >= 2) break;
+                if (m_dns_servers.size() >= 2)
+                    break;
             }
         }
     }

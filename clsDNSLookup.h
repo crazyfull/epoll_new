@@ -1,7 +1,6 @@
 #ifndef CLSDNSLOOKUP_H
 #define CLSDNSLOOKUP_H
 
-//#include "clsTCPSocket.h"
 #include "SocketContext.h"
 #include <cstddef>
 #include <unordered_map>
@@ -16,7 +15,6 @@
 #include <fstream>
 //#define DEBUG 1
 
-class Timer;
 class EpollReactor;
 class DNSLookup {
 public:
