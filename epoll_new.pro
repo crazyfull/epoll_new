@@ -21,6 +21,7 @@ SOURCES += \
         clsSocketList.cpp \
         clsTCPSocket.cpp \
         clsTimer.cpp \
+        clsTimerManager.cpp \
         main.cpp \
         tlsf.c
 
@@ -35,5 +36,7 @@ HEADERS += \
     clsSocketList.h \
     clsTCPSocket.h \
     clsTimer.h \
+    clsTimerManager.h \
+    constants.h \
     epoll.h
 
