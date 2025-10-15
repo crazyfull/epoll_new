@@ -11,7 +11,8 @@ enum SockTypes {
     IS_UDP_LISTENER = 3,
     IS_UDP_SOCKET = 4,
     IS_TIMER_SOCKET = 5,
-    IS_DNS_LOOKUP_SOCKET = 6
+    IS_TIMER_MANAGER_SOCKET = 6,
+    IS_DNS_LOOKUP_SOCKET = 7
 };
 
 struct SockInfo {
