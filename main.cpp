@@ -6,15 +6,15 @@
 
 // ============================== Example =========
 // Demonstrates inheritance only for non-hot paths + hot-path via fn pointer.
-class WsEcho: public TCPSocket
+class Proxy: public TCPSocket
 {
 public:
 
-    WsEcho() {
-        setOnData(&WsEcho::onDataTrampoline);
+    Proxy() {
+        setOnData(&Proxy::onDataTrampoline);
     }
 
-    ~WsEcho() {
+    ~Proxy() {
         std::printf("~WsEcho()\n");
     }
 
@@ -57,6 +57,8 @@ public:
         return "WsEcho";
     }
 
+    void coonect();
+
 private:
     bool fisrt = true;
     // non-virtual hot-path implementation
@@ -90,13 +92,13 @@ private:
 
     static void onDataTrampoline(TCPSocket *b, const uint8_t *d, size_t n)
     {
-        static_cast<WsEcho*>(b)->onDataImpl(d, n);
+        static_cast<Proxy*>(b)->onDataImpl(d, n);
     }
 };
 
 TCPSocket* OnAccepted(void* p){
     //Server* srv = static_cast<Server*>(p);
-    WsEcho *newWebsocket = new WsEcho;
+    Proxy *newWebsocket = new Proxy;
     return newWebsocket;
 }
 
@@ -191,7 +193,7 @@ getchar();
 
     //for(int i = 0; i < 1;i++){
 A:
-    WsEcho* outbound = new WsEcho();
+    Proxy* outbound = new Proxy();
     outbound->setReactor(srv.getRoundRobinShard());
     //outbound->connectTo("51.195.150.84", 80);
 

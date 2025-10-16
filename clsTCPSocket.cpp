@@ -253,11 +253,13 @@ bool TCPSocket::connectTo(const std::string &host, uint16_t port)
         return false;
     }
 
+    if(getStatus() != Ready){
+        printf("allready connect\n");
+        return false;
+    }
+
     setStatus(Connecting);
-
-    printf("resolve [%s]\n", host.c_str());
     m_SocketContext.port = port;
-
     return m_pReactor->getIPbyName(host.c_str(), connect_cb, this);
 }
 
