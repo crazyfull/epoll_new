@@ -4,6 +4,10 @@ CONFIG -= app_bundle
 CONFIG -= qt
 #baraye rafe ye bug #mohem search beshe
 
+#accept4: Too many open files
+#accept4: Too many open files
+#accept4: Too many open files
+
 #kheyli mohem set beshe baraye proxy server
 # اینطوری کانکشن‌های کوتاه‌مدت هزاران TIME_WAIT نمی‌سازن.
 # net.ipv4.tcp_tw_reuse = 1

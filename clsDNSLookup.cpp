@@ -48,11 +48,16 @@ void DNSLookup::close() {
 }
 
 void DNSLookup::reset_socket() {
+
+
+
 #ifdef DEBUG
-    int error = 0;
-    socklen_t errlen = sizeof(error);
-    getsockopt(m_SocketContext.fd, SOL_SOCKET, SO_ERROR, &error, &errlen);
-    printf("Socket error detected: %s\n", strerror(error));
+    if (m_SocketContext.fd != -1) {
+        int error = 0;
+        socklen_t errlen = sizeof(error);
+        getsockopt(m_SocketContext.fd, SOL_SOCKET, SO_ERROR, &error, &errlen);
+        printf("Socket error detected: %s\n", strerror(error));
+    }
 #endif
 
     close();
@@ -122,6 +127,10 @@ DNSLookup::DNSRequest* DNSLookup::acquire_request() {
 
 void DNSLookup::release_request(DNSRequest* req) {
     delete[] req->hostname;
+    req->retry_count = 0;
+    req->sent_time = 0;
+    req->cb = nullptr;
+    req->user_data = nullptr;
     req->hostname = nullptr;
     m_free_requests.push_back(req);
 }
@@ -132,8 +141,6 @@ bool DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QU
 
 
     //age HostAddress ipaddress bod resolve nemishe
-
-
     // Check for IPv4
     if (QuryType == DNSLookup::A) {
         struct in_addr ipv4_addr;
@@ -177,11 +184,11 @@ bool DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QU
 
 
 
-    std::string host(hostname);
+    std::string strhost(hostname);
     time_t now = time(nullptr);
 
     // Check cache
-    auto it = m_cache_map.find(host);
+    auto it = m_cache_map.find(strhost);
     if (it != m_cache_map.end() && (now - it->second.timestamp) < m_cache_ttl_sec) {
         const std::vector<std::string>& cached_ips = it->second.a_ips.empty() ? it->second.aaaa_ips : it->second.a_ips;
         DNSLookup::QUERY_TYPE qtype = it->second.a_ips.empty() ? DNSLookup::AAAA : DNSLookup::A;
@@ -198,8 +205,8 @@ bool DNSLookup::resolve(const char *hostname, callback_t cb, void *user_data, QU
         printf("use cache\n");
         cb(hostname, ips, count, qtype, user_data);
         free_ips(ips, count);
-        m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), host));
-        m_cache_list.push_front(host);
+        m_cache_list.erase(std::find(m_cache_list.begin(), m_cache_list.end(), strhost));
+        m_cache_list.push_front(strhost);
         return true;
     }
 
@@ -593,7 +600,7 @@ void DNSLookup::free_ips(char** ips, size_t count) {
             delete[] ips[i];
     }
 
-    if(ips == nullptr)
+    if (ips != nullptr)
         delete[] ips;
 }
 

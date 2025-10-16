@@ -15,7 +15,7 @@ public:
     }
 
     ~WsEcho() {
-        std::printf("~WsEcho()\n");
+       // std::printf("~WsEcho()\n");
     }
 
     void onConnected() override {
@@ -50,6 +50,7 @@ public:
 
     void onClose() override {
         std::printf("[-] fd=%d closed\n", fd());
+        delete this;
     }
 
     static const char * ClassName() {
@@ -77,7 +78,14 @@ private:
         //http://51.195.150.84/docker/RadiuSSH
 
         //echo
-        send(data, length);
+        std::string pckEcho;
+        pckEcho.append((const char*)data,length);
+        pckEcho.append("-");
+        //auto now = std::chrono::high_resolution_clock::now();
+        //auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+        pckEcho.append(std::to_string(fd()));
+
+        send(pckEcho.c_str(), pckEcho.length());
     }
 
     static void onDataTrampoline(TCPSocket *b, const uint8_t *d, size_t n)
@@ -107,7 +115,7 @@ void cbResolve(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_
     printf("\n");
 }
 
-Server srv(1024, 4);
+
 //DNSLookup dnsLookup(srv.getRoundRobinShard());
 
 int main()
@@ -118,6 +126,7 @@ int main()
     getrlimit(RLIMIT_NOFILE, &r);
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
+    Server srv(maxfd, 4);
 
 
     srv.setUseGarbageCollector(false);
@@ -202,7 +211,8 @@ A:
             goto A;
         }
 
-        outbound->resume_reading();
+        //outbound->resume_reading();
+        srv.getRoundRobinShard()->test();
     }
 
 

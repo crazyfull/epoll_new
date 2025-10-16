@@ -261,8 +261,9 @@ void EpollReactor::adoptAccepted(int m_fd) {
 
         bool ret = register_fd(fd, &pSocketbase->getSocketContext()->ev, IS_TCP_SOCKET, pSocketbase);
         if(ret){
-            pSocketbase->adoptFd(fd, this);
-            pSocketbase->onAccepted();  // callback
+            if(pSocketbase->adoptFd(fd, this)){
+                pSocketbase->onAccepted();  // callback
+            }
         }
 
     }
@@ -333,6 +334,13 @@ void EpollReactor::deleteLater(TCPSocket *pSockBase)
 {
     if(pSockBase)
         m_GCList.retire(pSockBase);
+}
+
+void EpollReactor::test()
+{
+    //m_GCList.flush_all();
+    malloc_trim(0);
+    printf("malloc_trim(0)\n");
 }
 
 BufferPool *EpollReactor::bufferPool()
@@ -456,12 +464,13 @@ void EpollReactor::checkDnsTimeouts()
 
 void EpollReactor::runGarbageCollector()
 {
+
     if(m_useGarbageCollector){
         m_GCList.flush();
     }else{
         m_GCList.flush_all();
-        printf("flush_all\n");
-        //malloc_trim(0);
+        printf("m_pConnectionList count: %d\n", m_pConnectionList->count());
+        malloc_trim(0);
     }
 }
 
@@ -577,7 +586,7 @@ void EpollReactor::maintenance()
     }
 
 */
-   // printf("maintenance(%zd)\n", (long)time);
+    // printf("maintenance(%zd)\n", (long)time);
 
     // TODO: اگر idle GC می‌خواهی، از SocketList iterate کن و با lastActive ببند.
 }

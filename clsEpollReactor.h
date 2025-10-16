@@ -39,6 +39,7 @@ public:
     void setUseGarbageCollector(bool newUseGarbageCollector);
     bool getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
     void deleteLater(TCPSocket* pSockBase);
+    void test();
 
     BufferPool *bufferPool();
 

@@ -53,7 +53,7 @@ public:
     int fd() const;
     //void setSocketContext(TCPConnectionHandle &c);
     void setOnData(OnDataFn fn);
-    void adoptFd(int fd, EpollReactor *reactor);
+    bool adoptFd(int fd, EpollReactor *reactor);
 
     static void setSocketOption(int fd, int name, bool isEnable);
     static void setSocketShared(int fd, bool isEnable);

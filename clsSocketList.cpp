@@ -8,6 +8,18 @@ uint32_t SocketList::genIDCounter() const
     return m_genIDCounter;
 }
 
+int SocketList::count()
+{
+    int ret = 0;
+    for (int i = 0; i < (int)m_list.size(); i++) {
+        if(m_list[i]->fd > 0){
+            ret++;
+        }
+    }
+
+    return ret;
+}
+
 SocketList::SocketList(int MaxFD):m_list(MaxFD, nullptr) {  //, m_GenIDList(MaxFD, 0)
 
     //init preallocate
@@ -73,7 +85,6 @@ void SocketList::remove(int fd) {
             clientSocket->socketBasePtr = nullptr;
             delete p;
             */
-
 
         }
 

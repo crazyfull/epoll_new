@@ -11,10 +11,11 @@ public:
     ~BufferPool();
     void* allocate(size_t size);
     void deallocate(void* ptr);
+    size_t size();
 
 private:
     void* pool_ = nullptr;
-    tlsf_t tlsf_ = nullptr;
+    tlsf_t m_tlsf = nullptr;
 };
 
 #endif // CLSBUFFERPOOL_H

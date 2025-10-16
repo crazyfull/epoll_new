@@ -40,6 +40,7 @@ public:
     // remove connection
     void remove(int fd);
     uint32_t genIDCounter() const;
+    int count();
 };
 
 #endif // CLSSOCKETLIST_H

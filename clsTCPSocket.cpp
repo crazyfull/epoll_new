@@ -129,11 +129,12 @@ void TCPSocket::close()
         ::shutdown(m_SocketContext.fd, SHUT_RDWR);
         ::close(m_SocketContext.fd);
 
-        m_pReactor->deleteLater(this);
+        //m_pReactor->deleteLater(this);
         printf("close()\n");
 
-        this->onClose();
         m_SocketContext.fd = -1;
+
+        this->onClose();
 
         printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
         // m_pReactor->onSocketClosed(m_SocketContext.fd);
@@ -183,26 +184,25 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     int ret = ::connect(m_SocketContext.fd, (struct sockaddr*)&addr, sizeof(addr));
     if (ret == 0) {
         // اتصال فوری موفق (نادر اما ممکن)
-        adoptFd(m_SocketContext.fd, m_pReactor); // اضافه کردن به shard/reactor
-        onConnected();
+        if(adoptFd(m_SocketContext.fd, m_pReactor)){
+            onConnected();
+        }
+
         return;
     }
 
     if (errno == EINPROGRESS) {
 
-
         // اتصال در حال انجام (non-blocking)
-        adoptFd(m_SocketContext.fd, m_pReactor); // اضافه کردن به shard/reactor
+        if(adoptFd(m_SocketContext.fd, m_pReactor)){
+            //set events
+            m_SocketContext.ev.events = EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING | EPOLLOUT | EPOLLERR;
 
-        // ثبت برای EPOLLOUT تا وقتی writable شد، چک کنیم (در onWritable مدیریت می‌شه)
-
-        //set events
-        m_SocketContext.ev.events = EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING | EPOLLOUT | EPOLLERR;
-
-        bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TCP_SOCKET, this);
-        if(ret){
-            onConnecting();
-            return;
+            bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TCP_SOCKET, this);
+            if(ret){
+                onConnecting();
+                return;
+            }
         }
 
     }
@@ -248,13 +248,15 @@ void TCPSocket::setOnData(OnDataFn fn) {
     onData_ = fn;
 }
 
-void TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
+bool TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
 
     int sndbuf = 1 * 1024; // 16KB
     //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
     //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
 
     setReactor(reactor);
+
+    printf("allocate size: %zu\n", m_pReactor->bufferPool()->size());
 
     m_SocketContext.fd = fd;
     //m_SocketContext.writeBuffer = (char*)::malloc(SLAB_SIZE);
@@ -268,10 +270,10 @@ void TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
     {
         perror("allocate failed!");
         close();
+        return false;
     }
 
-
-    // اینجا باید register_fd بزنی (بسته به پیاده‌سازی Reactor)
+    return true;
 }
 
 

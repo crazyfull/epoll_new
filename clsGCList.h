@@ -67,12 +67,12 @@ public:
 
     void flush_all() noexcept {
         if(!m_qList.empty())
-            printf("GC flush_all()\n");
+            //printf("GC flush_all()\n");
 
         while (!m_qList.empty()) {
             T* p = m_qList.front().ptr;
             m_qList.pop_front();
-            printf("flush_all delete..................................................................................\n", m_qList.size());
+            //printf("flush_all delete..................................................................................\n", m_qList.size());
             delete p;
         }
 
