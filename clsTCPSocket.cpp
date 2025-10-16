@@ -115,6 +115,7 @@ int TCPSocket::getErrorCode()
 /**/
 void TCPSocket::close()
 {
+
     if(m_SocketContext.fd != -1){
 
         m_pReactor->del_fd(m_SocketContext.fd, true);
@@ -129,16 +130,17 @@ void TCPSocket::close()
         ::shutdown(m_SocketContext.fd, SHUT_RDWR);
         ::close(m_SocketContext.fd);
 
-        //m_pReactor->deleteLater(this);
+
+        //writeQueue dar SocketContext free mishe
+
         printf("close()\n");
 
         m_SocketContext.fd = -1;
-
-        this->onClose();
-
         printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
-        // m_pReactor->onSocketClosed(m_SocketContext.fd);
+        this->onClose();
+        m_pReactor->deleteLater(this);
     }
+
 }
 
 void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
@@ -256,7 +258,7 @@ bool TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
 
     setReactor(reactor);
 
-    printf("allocate size: %zu\n", m_pReactor->bufferPool()->size());
+    //printf("allocate size: %zu\n", m_pReactor->bufferPool()->size());
 
     m_SocketContext.fd = fd;
     //m_SocketContext.writeBuffer = (char*)::malloc(SLAB_SIZE);

@@ -336,12 +336,6 @@ void EpollReactor::deleteLater(TCPSocket *pSockBase)
         m_GCList.retire(pSockBase);
 }
 
-void EpollReactor::test()
-{
-    //m_GCList.flush_all();
-    malloc_trim(0);
-    printf("malloc_trim(0)\n");
-}
 
 BufferPool *EpollReactor::bufferPool()
 {
@@ -470,7 +464,9 @@ void EpollReactor::runGarbageCollector()
     }else{
         m_GCList.flush_all();
         printf("m_pConnectionList count: %d\n", m_pConnectionList->count());
-        malloc_trim(0);
+
+        //mallopt(M_MMAP_THRESHOLD, 128 * 1024);
+        //malloc_trim(0);
     }
 }
 

@@ -15,7 +15,7 @@ public:
     }
 
     ~WsEcho() {
-       // std::printf("~WsEcho()\n");
+        std::printf("~WsEcho()\n");
     }
 
     void onConnected() override {
@@ -50,7 +50,7 @@ public:
 
     void onClose() override {
         std::printf("[-] fd=%d closed\n", fd());
-        delete this;
+       // delete this;
     }
 
     static const char * ClassName() {
@@ -95,8 +95,8 @@ private:
 };
 
 TCPSocket* OnAccepted(void* p){
-    Server* srv = static_cast<Server*>(p);
-    auto newWebsocket = new WsEcho;
+    //Server* srv = static_cast<Server*>(p);
+    WsEcho *newWebsocket = new WsEcho;
     return newWebsocket;
 }
 
@@ -212,7 +212,8 @@ A:
         }
 
         //outbound->resume_reading();
-        srv.getRoundRobinShard()->test();
+        //srv.getRoundRobinShard()->test();
+
     }
 
 

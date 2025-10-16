@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <deque>
 #include <cstdint>
+#include <malloc.h>
 #include <time.h>
 
 #ifndef LIKELY
@@ -42,7 +43,7 @@ public:
         //is not thread-safe
         m_qList.push_back(GCNode{p, now_s_coarse()});
 
-        flush();
+        //flush();
     }
 
     void flush() noexcept {

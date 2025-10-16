@@ -23,7 +23,3 @@ void BufferPool::deallocate(void *ptr) {
     tlsf_free(m_tlsf, ptr);
 }
 
-size_t BufferPool::size()
-{
-    return tlsf_size();
-}
