@@ -17,7 +17,6 @@ public:
     };
 
     using iterator = std::deque<Buffer>::iterator;
-    //using iterator = std::list<Buffer>::iterator;
 
     SendQueue(BufferPool& pool);
     ~SendQueue();

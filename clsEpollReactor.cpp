@@ -262,46 +262,57 @@ void EpollReactor::adoptAccepted(int m_fd) {
         bool ret = register_fd(fd, &pSocketbase->getSocketContext()->ev, IS_TCP_SOCKET, pSocketbase);
         if(ret){
             if(pSocketbase->adoptFd(fd, this)){
+
+                pSocketbase->setStatus(TCPSocket::Connected);
                 pSocketbase->onAccepted();  // callback
+                continue;
             }
         }
+
+        //be har dalili accept nashod close call beshe ke GC emal beshe
+        pSocketbase->close();
 
     }
 }
 
-bool EpollReactor::register_fd(int fd, epoll_event *pEvent, SockTypes sockType, void* ptr)
+bool EpollReactor::register_fd(int fd, epoll_event *pEvent,SockTypes sockType, void* ptr)
 {
     if(!pEvent)
         return false;
 
     SockInfo* sockinfo = m_pConnectionList->add(fd, sockType);
     if (!sockinfo) {
+
         printf("can not add new connection to ConnectionList\n");
-        ::close(fd);
+        return false;
+    }
 
-        if (sockType == IS_TCP_SOCKET) {
-            TCPSocket *pTCPSocket = static_cast<TCPSocket*>(ptr);
-            if(pTCPSocket)
-                delete pTCPSocket;
-        }
+    /*
+     *  in bakhsh tavasole khode socket bayad handle beshe
+    //::close(fd);
+    if (sockType == IS_TCP_SOCKET) {
+        TCPSocket *pTCPSocket = static_cast<TCPSocket*>(ptr);
+        if(pTCPSocket)
+            delete pTCPSocket;
+    }
 
-        if (sockType == IS_UDP_SOCKET) {
-            UDPSocket *pUDPSocket = static_cast<UDPSocket*>(ptr);
-            if(pUDPSocket)
-                delete pUDPSocket;
-        }
+    if (sockType == IS_UDP_SOCKET) {
+        UDPSocket *pUDPSocket = static_cast<UDPSocket*>(ptr);
+        if(pUDPSocket)
+            delete pUDPSocket;
+    }
 
-        if (sockType == IS_TIMER_SOCKET) {
+    if (sockType == IS_TIMER_SOCKET) {
 
-            /* lazem nist khode timer tavasote user delete bayad beshe
+        /* lazem nist khode timer tavasote user delete bayad beshe
             Timer *pTimer = static_cast<Timer*>(ptr);
             if(pTimer)
                 delete pTimer;
-            */
-        }
-
-        return false;
+            * /
     }
+    */
+
+
 
     if(ptr)
         sockinfo->socketBasePtr = ptr;

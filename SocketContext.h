@@ -21,8 +21,10 @@ struct SocketContext
 
     ~SocketContext(){
         //printf("~SocketContext(---------------------------------------------------------------)\n");
-        delete writeQueue;
-        writeQueue = nullptr;
+        if(writeQueue){
+            delete writeQueue;
+            writeQueue = nullptr;
+        }
     }
 };
 #endif // SOCKETCONTEXT_H

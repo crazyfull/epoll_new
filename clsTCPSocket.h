@@ -18,7 +18,15 @@ class TCPSocket
 {
 public:
     TCPSocket();
+    enum socketStatus{
+        Ready,
+        Closed,
+        Closing,
+        Connecting,
+        Connected
+    };
 
+    socketStatus status {Ready};
     uint64_t recBytes = 0;
     uint64_t sndBytes = 0;
 
@@ -71,6 +79,8 @@ void pause_reading();
 void resume_reading();
 int getErrorCode();
 
+socketStatus getStatus() const;
+
 protected:
     OnDataFn onData_ { nullptr };
     struct SocketContext m_SocketContext {}; // composition with low-level TCP
@@ -82,6 +92,7 @@ private:
     bool m_readPaused { false };
     bool m_pendingClose { false };
 
+    void setStatus(socketStatus newStatus);
 
 
     //CloseCallback close_cb_{};

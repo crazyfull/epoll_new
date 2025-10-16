@@ -10,6 +10,18 @@ TCPSocket::TCPSocket()
 
 }
 
+TCPSocket::socketStatus TCPSocket::getStatus() const
+{
+    return status;
+}
+
+void TCPSocket::setStatus(socketStatus newStatus)
+{
+    //faghat zamani status mitone avaz beshe ke close nabashe
+    if(newStatus != Closed)
+        status = newStatus;
+}
+
 void TCPSocket::setReactor(EpollReactor *r) {
     m_pReactor = r;
     if (!m_SocketContext.writeQueue) {
@@ -116,13 +128,14 @@ int TCPSocket::getErrorCode()
 void TCPSocket::close()
 {
 
-    if(m_SocketContext.fd != -1){
+    if(getStatus() != Closed){
+        setStatus(Closed);
 
+        //delere from epoll and ConnectionList
         m_pReactor->del_fd(m_SocketContext.fd, true);
 
         if(m_SocketContext.rBuffer) {
             m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
-            //::free(m_SocketContext.rBuffer);
             m_SocketContext.rBuffer = nullptr;
         }
 
@@ -147,6 +160,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
 {
     if (!ips || count == 0) {
         printf("No result for %s\n", hostname);
+        setStatus(Closed);
         onConnectFailed();
         return;
     }
@@ -159,6 +173,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     m_SocketContext.fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
     if (m_SocketContext.fd == -1) {
         perror("socket creation failed");
+        setStatus(Closed);
         onConnectFailed();
         return;
     }
@@ -177,6 +192,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
         // اگر IPv4 نبود، می‌تونی IPv6 رو چک کنی (برای حالا ساده نگه می‌داریم)
         perror("inet_pton failed (IPv4 assumed)");
+        setStatus(Closing);
         onConnectFailed();
         close();
         return;
@@ -187,7 +203,12 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     if (ret == 0) {
         // اتصال فوری موفق (نادر اما ممکن)
         if(adoptFd(m_SocketContext.fd, m_pReactor)){
+            setStatus(Connected);
             onConnected();
+        }else{
+            setStatus(Closing);
+            onConnectFailed();
+            close();
         }
 
         return;
@@ -203,14 +224,13 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
             bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TCP_SOCKET, this);
             if(ret){
                 onConnecting();
-                return;
             }
         }
-
     }
 
-    // خطای connect
+    //
     perror("connect failed");
+    setStatus(Closing);
     onConnectFailed();
     close();
 }
@@ -233,13 +253,13 @@ bool TCPSocket::connectTo(const std::string &host, uint16_t port)
         return false;
     }
 
+    setStatus(Connecting);
+
     printf("resolve [%s]\n", host.c_str());
     m_SocketContext.port = port;
 
     return m_pReactor->getIPbyName(host.c_str(), connect_cb, this);
 }
-
-
 
 int TCPSocket::fd() const
 {
@@ -271,7 +291,6 @@ bool TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
     if (!m_SocketContext.rBuffer)
     {
         perror("allocate failed!");
-        close();
         return false;
     }
 
@@ -311,6 +330,10 @@ void TCPSocket::onReadable()
                 printf("bytesRec == 0 close() %zu----------------------\n", m_SocketContext.writeQueue->size());
                 if (!m_SocketContext.writeQueue->empty()) {
                     m_pendingClose = true;
+                    //change status for shurdown
+                    setStatus(Closing);
+
+                    //faal shodane EPOLLOUT baraye khali kardane safe ersal
                     m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);
                 }else{
                     close();
@@ -533,13 +556,16 @@ void TCPSocket::handleHalfClose() {
         } else {
             printf("handleHalfClose bytesRec == 0 close()\n");
             close();
+            return;
         }
 
         m_pendingClose = true;
+        setStatus(Closing);
     } else if (ret < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
         printf("handleHalfClose errno\n");
 
         close();
+        return;
     }
 
     // check socket error
@@ -547,6 +573,7 @@ void TCPSocket::handleHalfClose() {
     if (err != 0) {
         printf("Socket error: [%d] msg:[%s]\n", err, strerror(err));
         close();
+        return;
     }
 }
 

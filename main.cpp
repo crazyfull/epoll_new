@@ -126,7 +126,7 @@ int main()
     getrlimit(RLIMIT_NOFILE, &r);
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
-    Server srv(maxfd, 4);
+    Server srv(maxfd, 6);
 
 
     srv.setUseGarbageCollector(false);
