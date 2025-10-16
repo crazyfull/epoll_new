@@ -4,6 +4,7 @@
 // Owns fd, rw buffers, and queue; used via composition by high-level handlers.
 #include "clsSendQueue.h"
 #include <cstdint>
+#include <cstdio>
 #include <sys/epoll.h>
 #include <chrono>
 
@@ -17,5 +18,11 @@ struct SocketContext
     size_t rBufferLength { 0 };
     SendQueue* writeQueue {nullptr};
     std::chrono::steady_clock::time_point lastActive {};
+
+    ~SocketContext(){
+        //printf("~SocketContext(---------------------------------------------------------------)\n");
+        delete writeQueue;
+        writeQueue = nullptr;
+    }
 };
 #endif // SOCKETCONTEXT_H
