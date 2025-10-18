@@ -6,61 +6,85 @@
 
 // ============================== Example =========
 // Demonstrates inheritance only for non-hot paths + hot-path via fn pointer.
-class Proxy: public TCPSocket
+class Acceptor: protected TCPSocket
 {
 public:
 
-    Proxy() {
-        setOnData(&Proxy::onDataTrampoline);
+    Acceptor() {
+        //setOnData(&Acceptor::onDataTrampoline);
     }
 
-    ~Proxy() {
-        std::printf("~WsEcho()\n");
+    ~Acceptor() {
+        std::printf("~Acceptor()\n");
     }
 
-    void onConnected() override {
-        std::printf("onConnected() fd: %d\n", fd());
-
-        return;
-        //std::string pck = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+";
-
-        /**/
-        //http://ipv4.download.thinkbroadband.com:8080/5MB.zip
-        //http://freetestdata.com/wp-content/uploads/2022/02/Free_Test_Data_1MB_JPG.jpg
-
-        std::string pck = "GET /docker/udpgw HTTP/1.1\r\n"
-                          "Host: 51.195.150.84\r\n"
-                          //"connection: close\r\n"
-                          "\r\n";
-
-        send(pck.c_str(), pck.length());
-    }
-
-    void onConnecting() override {
-        std::printf("onConnecting %d\n", fd());
-    }
-
-    void onConnectFailed() override {
-        std::printf("onConnectFailed %d\n", fd());
-    }
-
-    void onAccepted() override {
-        std::printf("[+] fd=%d onAccepted\n", fd());
-    }
 
     void onClose() override {
-        std::printf("[-] fd=%d closed\n", fd());
-       // delete this;
+        onAcceptorClose();
+        //std::printf("[-] fd=%d closed\n", fd());
+        // delete this;
+    }
+
+    virtual void onAcceptorClose() {}
+
+    static const char * ClassName() {
+        return "Acceptor";
+    }
+
+    TCPSocket* getSocketBase(){
+        return getPointer();
+    }
+
+    void gooz(){
+        std::printf("-------getStatus=%d\n", getStatus());
+        Acceptor::send("data", 4);
+    }
+
+private:
+    // non-virtual hot-path implementation
+
+
+
+};
+
+class Connector: protected TCPSocket
+{
+public:
+
+    Connector() {
+        //setOnData(&Connector::onDataTrampoline);
+
+    }
+
+    ~Connector() {
+        std::printf("~Connector()\n");
+    }
+
+    virtual void onConnectorClose() {}
+
+    void onClose() override {
+        onConnectorClose();
+        //printf("onClose() fd=%d\n", fd());
+        // delete this;
     }
 
     static const char * ClassName() {
-        return "WsEcho";
+        return "Connector";
     }
 
-    void coonect();
+    bool coonect(const std::string &host, uint16_t port){
+        return connectTo(host, port);
+    }
+
+    TCPSocket::socketStatus getStatus(){
+        return TCPSocket::getStatus();
+    }
+
+
 
 private:
-    bool fisrt = true;
+
+    /*
     // non-virtual hot-path implementation
     void onDataImpl(const uint8_t *data, size_t length)
     {
@@ -73,7 +97,7 @@ private:
         }else{
             //
         }
-*/
+* /
         //581   1762968 [1763563]
 
         //http://dl.mojz.ir/docker/radiussh.tar.gz
@@ -90,16 +114,145 @@ private:
         send(pckEcho.c_str(), pckEcho.length());
     }
 
-    static void onDataTrampoline(TCPSocket *b, const uint8_t *d, size_t n)
+    static void onDataTrampoline(void *p, const uint8_t *d, size_t n)
     {
-        static_cast<Proxy*>(b)->onDataImpl(d, n);
+        static_cast<Connector*>(p)->onDataImpl(d, n);
     }
+    */
+};
+
+
+class Proxy: public Acceptor, public Connector{
+public:
+    std::string buff;
+
+    Proxy(){
+        Connector::setOnData(&Proxy::onConnectorReceiveData);
+
+        Acceptor::setOnData(&Proxy::onAcceptorReceiveData);
+
+    }
+
+    ~Proxy(){
+        printf("~Proxy()\n");
+    }
+
+    TCPSocket* getSocketBase(){
+        return Acceptor::getSocketBase();
+    }
+
+    void onAccepted() override {
+        printf("onAccepted() fd=%d\n", Acceptor::fd());
+
+        Connector::setReactor(Acceptor::getReactor());
+        Connector::coonect("dl.mojz.ir", 443);
+        //Connector::coonect("192.168.1.10", 9000);
+
+    }
+
+    void onAcceptorClose() override {
+
+        printf("onAcceptorClose() fd=%d\n", Acceptor::fd());
+    }
+
+
+    void onConnected() override {
+        printf("onConnected() fd: %d\n", Connector::fd());
+
+
+        //std::string pck = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+";
+
+        /*
+        //http://ipv4.download.thinkbroadband.com:8080/5MB.zip
+        //http://freetestdata.com/wp-content/uploads/2022/02/Free_Test_Data_1MB_JPG.jpg
+
+        std::string pck = "GET /docker/udpgw HTTP/1.1\r\n"
+                          "Host: 51.195.150.84\r\n"
+                          //"connection: close\r\n"
+                          "\r\n";
+        */
+
+        if(buff.length() > 0){
+            Connector::send(buff.c_str(), buff.length());
+            buff.clear();
+        }
+
+
+    }
+
+    void onConnecting() override {
+        std::printf("onConnecting %d\n", Connector::fd());
+    }
+
+    void onConnectFailed() override {
+        std::printf("onConnectFailed %d\n", Connector::fd());
+    }
+
+    void onConnectorClose() override {
+        printf("onConnectorClose() fd=%d\n", Connector::fd());
+    }
+
+private:
+
+    static void onAcceptorReceiveData(void *b, const uint8_t *data, size_t length)
+    {
+        static_cast<Proxy*>(b)->onAcceptorReceiveData(data, length);
+    }
+
+    static void onConnectorReceiveData(void *b, const uint8_t *data, size_t length)
+    {
+        static_cast<Proxy*>(b)->onConnectorReceiveData(data, length);
+    }
+
+    void onAcceptorReceiveData(const uint8_t *data, size_t length)
+    {
+        /*
+        if(Connector::getStatus() == 4){
+            buff.append((const char*)data, length);
+            return;
+        }
+
+        printf("getStatus [%u]\n", Connector::getStatus());
+        printf("onAcceptorReceiveData: [%s] len[%zu]\n", data, length);
+
+        //send(pckEcho.c_str(), pckEcho.length());
+        std::string pck;
+        pck.append((const char*)data, length);
+        Connector::send(pck.c_str(), pck.length());
+
+        */
+
+        printf("Acceptor data: len[%zu]\n", length);
+
+        if(Connector::getStatus() == TCPSocket::Connected) {
+            printf("Connector::send data[%s]\n", data );
+
+            Connector::send(data, length);
+        } else {
+            // ذخیره در بافر تا زمانی که connector متصل شود
+            buff.append((const char*)data, length);
+        }
+    }
+
+    void onConnectorReceiveData(const uint8_t *data, size_t length)
+    {
+        printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<,,,🟠 Server data: len[%zu], sending to client via Acceptor\n", length);
+
+        if(Acceptor::getStatus() == TCPSocket::Connected) {
+            Acceptor::send(data, length);
+        } else {
+            printf("🔴 Acceptor not connected, dropping data\n");
+        }
+    }
+
+
+
 };
 
 TCPSocket* OnAccepted(void* p){
     //Server* srv = static_cast<Server*>(p);
     Proxy *newWebsocket = new Proxy;
-    return newWebsocket;
+    return newWebsocket->getSocketBase();
 }
 
 // ============================== Example main ===========================
@@ -128,7 +281,7 @@ int main()
     getrlimit(RLIMIT_NOFILE, &r);
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
-    Server srv(maxfd, 6);
+    Server srv(maxfd, 2);
 
 
     srv.setUseGarbageCollector(false);
@@ -193,14 +346,15 @@ getchar();
 
     //for(int i = 0; i < 1;i++){
 A:
-    Proxy* outbound = new Proxy();
+    /*
+    Acceptor* outbound = new Acceptor();
     outbound->setReactor(srv.getRoundRobinShard());
     //outbound->connectTo("51.195.150.84", 80);
 
     //outbound->connectTo("51.195.150.84", 80);
     outbound->connectTo("192.168.1.11", 5001);
     //}
-
+*/
     /**/
     for(;;){
         char needExit = getchar();
@@ -209,7 +363,7 @@ A:
         }
 
         if(needExit == 'r'){
-            outbound->close();
+            //outbound->close();
             goto A;
         }
 

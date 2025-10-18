@@ -19,19 +19,19 @@ class TCPSocket
 public:
     TCPSocket();
     enum socketStatus{
-        Ready,
-        Closed,
-        Closing,
-        Connecting,
-        Connected
+        Ready = 1,
+        Closed = 2,
+        Closing = 3,
+        Connecting = 4,
+        Connected = 5
     };
 
-    socketStatus status {Ready};
+
     uint64_t recBytes = 0;
     uint64_t sndBytes = 0;
 
     void setReactor(EpollReactor* r);
-    using OnDataFn = void(*)(TCPSocket* , const uint8_t* , size_t);     // (hot path)
+    using OnDataFn = void(*)(void* , const uint8_t* , size_t);     // (hot path)
     //using CloseCallback = std::function<void(int)>;                   // fd
     //using EpollModCallback = std::function<void(int, uint32_t)>;      // fd, newFlags
 
@@ -59,6 +59,7 @@ public:
 
     // accessors
     int fd() const;
+    TCPSocket *getPointer();
     //void setSocketContext(TCPConnectionHandle &c);
     void setOnData(OnDataFn fn);
     bool adoptFd(int fd, EpollReactor *reactor);
@@ -75,24 +76,27 @@ public:
 
     SocketContext *getSocketContext() ;
 
-void pause_reading();
-void resume_reading();
-int getErrorCode();
+    void pause_reading();
+    void resume_reading();
+    int getErrorCode();
 
-socketStatus getStatus() const;
+    socketStatus getStatus() const;
+
+    EpollReactor *getReactor() const;
 
 protected:
     OnDataFn onData_ { nullptr };
     struct SocketContext m_SocketContext {}; // composition with low-level TCP
     void _connect(const char *hostname, char **ips, size_t count);
 
-
+    void setStatus(socketStatus newStatus);
 private:
     EpollReactor* m_pReactor = nullptr;
     bool m_readPaused { false };
     bool m_pendingClose { false };
+    socketStatus status {Ready};
 
-    void setStatus(socketStatus newStatus);
+
 
 
     //CloseCallback close_cb_{};

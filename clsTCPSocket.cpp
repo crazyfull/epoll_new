@@ -18,8 +18,13 @@ TCPSocket::socketStatus TCPSocket::getStatus() const
 void TCPSocket::setStatus(socketStatus newStatus)
 {
     //faghat zamani status mitone avaz beshe ke close nabashe
-    if(newStatus != Closed)
+    if(status != Closed)
         status = newStatus;
+}
+
+EpollReactor *TCPSocket::getReactor() const
+{
+    return m_pReactor;
 }
 
 void TCPSocket::setReactor(EpollReactor *r) {
@@ -129,6 +134,7 @@ void TCPSocket::close()
 {
 
     if(getStatus() != Closed){
+
         setStatus(Closed);
 
         //delere from epoll and ConnectionList
@@ -148,10 +154,12 @@ void TCPSocket::close()
 
         printf("close()\n");
 
-        m_SocketContext.fd = -1;
+        //m_SocketContext.fd = -1;
         printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
         this->onClose();
-        m_pReactor->deleteLater(this);
+
+        //disable garbage collector
+        //m_pReactor->deleteLater(this);
     }
 
 }
@@ -224,6 +232,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
             bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TCP_SOCKET, this);
             if(ret){
                 onConnecting();
+                return;
             }
         }
     }
@@ -266,6 +275,11 @@ bool TCPSocket::connectTo(const std::string &host, uint16_t port)
 int TCPSocket::fd() const
 {
     return m_SocketContext.fd;
+}
+
+TCPSocket *TCPSocket::getPointer()
+{
+    return this;
 }
 
 void TCPSocket::setOnData(OnDataFn fn) {
@@ -329,7 +343,7 @@ void TCPSocket::onReadable()
         if(bytesRec == 0) {
 
             if(!m_pendingClose){
-                printf("bytesRec == 0 close() %zu----------------------\n", m_SocketContext.writeQueue->size());
+                //printf("bytesRec == 0 close() %zu----------------------\n", m_SocketContext.writeQueue->size());
                 if (!m_SocketContext.writeQueue->empty()) {
                     m_pendingClose = true;
                     //change status for shurdown
@@ -347,7 +361,7 @@ void TCPSocket::onReadable()
         if(bytesRec < 0) {
             if(errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
-            printf("bytesRec = -1 close()\n");
+            //printf("bytesRec = -1 close()\n");
             close();
             break;
         }
@@ -411,6 +425,7 @@ void TCPSocket::onWritable() {
         m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
 
         //connected sucessfully
+        setStatus(Connected);
         onConnected();
         return;
     }
@@ -546,7 +561,7 @@ void TCPSocket::onWritable() {
 void TCPSocket::handleHalfClose() {
     char buf[1];
     ssize_t ret = ::recv(m_SocketContext.fd, buf, 1, MSG_PEEK | MSG_DONTWAIT);
-    printf("handleHalfClose: %zd\n", ret);
+    //printf("handleHalfClose: %zd\n", ret);
     if (ret == 0) {
 
         if (!m_SocketContext.writeQueue->empty()) {
@@ -556,7 +571,7 @@ void TCPSocket::handleHalfClose() {
             printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
             //}
         } else {
-            printf("handleHalfClose bytesRec == 0 close()\n");
+            //printf("handleHalfClose bytesRec == 0 close()\n");
             close();
             return;
         }

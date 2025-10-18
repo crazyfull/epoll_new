@@ -104,7 +104,7 @@ bool EpollReactor::addFlags(SocketContext *pContext, uint32_t flags)
     if (!(pContext->ev.events & flags)){
         pContext->ev.events |= flags;
 
-        printf("mod_add() flags: %d\n", flags);
+        //printf("mod_add() flags: %d\n", flags);
 
         if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
             perror("EPOLL_CTL_MOD mod_add");
@@ -120,7 +120,7 @@ void EpollReactor::removeFlags(SocketContext *pContext, uint32_t flags)
     if (pContext->ev.events & flags) {
         pContext->ev.events &= ~flags;
 
-        printf("mod_remove() flags: %d\n", flags);
+        //printf("mod_remove() flags: %d\n", flags);
 
         if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
             perror("EPOLL_CTL_MOD mod_remove");
@@ -263,7 +263,7 @@ void EpollReactor::adoptAccepted(int m_fd) {
         if(ret){
             if(pSocketbase->adoptFd(fd, this)){
 
-                pSocketbase->setStatus(TCPSocket::Connected);
+                //pSocketbase->setStatus(TCPSocket::Connected);
                 pSocketbase->onAccepted();  // callback
                 continue;
             }
@@ -389,7 +389,7 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
 
     //get shutdown
     if(ev & (EPOLLRDHUP)) {
-        printf("EPOLLRDHUP\n");
+        //printf("EPOLLRDHUP\n");
         pSockBase->handleHalfClose();   //#mohem inja mtmaen nistam dorost bashe
     }
 
@@ -398,12 +398,12 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
     }
 
     if(ev & EPOLLIN){
-        printf("EPOLLIN\n");
+        //printf("EPOLLIN\n");
         pSockBase->onReadable();
     }
 
     if(ev & EPOLLOUT){
-        printf("EPOLLOUT\n");
+        //printf("EPOLLOUT\n");
         pSockBase->onWritable();
     }
 }

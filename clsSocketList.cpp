@@ -78,7 +78,7 @@ void SocketList::remove(int fd) {
     if (clientSocket) {
         clientSocket->fd = -1;
         if(clientSocket->socketBasePtr){
-            printf("SocketList::remove: [%d]\n\n", fd);
+            //printf("SocketList::remove: [%d]\n\n", fd);
 
             /*
             auto* p = clientSocket->socketBasePtr;
