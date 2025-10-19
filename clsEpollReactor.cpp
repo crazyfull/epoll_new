@@ -246,31 +246,7 @@ void EpollReactor::adoptAccepted(int m_fd) {
             continue;
         }
 
-        /*
-        SockInfo* sockinfo = m_pConnectionList->add(fd, IS_TCP_SOCKET);
-        if (!sockinfo) {
-            printf("can not accept new connection ConnectionList is full\n");
-            ::close(fd);
-            delete pSocketbase;
-            continue;
-        }
-        sockinfo->socketBasePtr = pSocketbase;
-        */
-
-        //
-
-        bool ret = register_fd(fd, &pSocketbase->getSocketContext()->ev, IS_TCP_SOCKET, pSocketbase);
-        if(ret){
-            if(pSocketbase->adoptFd(fd, this)){
-
-                //pSocketbase->setStatus(TCPSocket::Connected);
-                pSocketbase->onAccepted();  // callback
-                continue;
-            }
-        }
-
-        //be har dalili accept nashod close call beshe ke GC emal beshe
-        pSocketbase->close();
+        pSocketbase->_accepted();
 
     }
 }
@@ -474,7 +450,7 @@ void EpollReactor::runGarbageCollector()
         m_GCList.flush();
     }else{
         m_GCList.flush_all();
-        printf("m_pConnectionList count: %d\n", m_pConnectionList->count());
+        //printf("m_pConnectionList count: %d\n", m_pConnectionList->count());
 
         //mallopt(M_MMAP_THRESHOLD, 128 * 1024);
         //malloc_trim(0);

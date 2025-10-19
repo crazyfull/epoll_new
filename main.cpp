@@ -36,8 +36,8 @@ public:
     }
 
     void gooz(){
-        std::printf("-------getStatus=%d\n", getStatus());
-        Acceptor::send("data", 4);
+        //std::printf("-------getStatus=%d\n", getStatus());
+        TCPSocket::send("gooz", 4);
     }
 
 private:
@@ -73,7 +73,7 @@ public:
     }
 
     bool coonect(const std::string &host, uint16_t port){
-        return connectTo(host, port);
+        return connectTo(host.c_str(), port);
     }
 
     TCPSocket::socketStatus getStatus(){
@@ -145,8 +145,8 @@ public:
         printf("onAccepted() fd=%d\n", Acceptor::fd());
 
         Connector::setReactor(Acceptor::getReactor());
-        Connector::coonect("dl.mojz.ir", 443);
-        //Connector::coonect("192.168.1.10", 9000);
+        //Connector::coonect("dl.mojz.ir", 443);
+        Connector::coonect("192.168.1.10", 9000);
 
     }
 
@@ -222,21 +222,30 @@ private:
 
         */
 
-        printf("Acceptor data: len[%zu]\n", length);
+        //printf("Acceptor data: len[%zu]\n", length);
+        printf("Connector::fd(): fd[%d] ClassName: %s\n", Connector::fd(), Connector::ClassName());
+        printf("Acceptor::fd(): fd[%d] ClassName: %s\n", Acceptor::fd(), Acceptor::ClassName());
+
 
         if(Connector::getStatus() == TCPSocket::Connected) {
             printf("Connector::send data[%s]\n", data );
 
             Connector::send(data, length);
+
         } else {
             // ذخیره در بافر تا زمانی که connector متصل شود
             buff.append((const char*)data, length);
         }
+
+        gooz();
     }
 
     void onConnectorReceiveData(const uint8_t *data, size_t length)
     {
-        printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<,,,🟠 Server data: len[%zu], sending to client via Acceptor\n", length);
+        printf("Connector::fd(): fd[%d] ClassName: %s\n", Connector::fd(), Connector::ClassName());
+        printf("Acceptor::fd(): fd[%d] ClassName: %s\n", Acceptor::fd(), Acceptor::ClassName());
+
+        //gooz();
 
         if(Acceptor::getStatus() == TCPSocket::Connected) {
             Acceptor::send(data, length);
@@ -281,7 +290,7 @@ int main()
     getrlimit(RLIMIT_NOFILE, &r);
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
-    Server srv(maxfd, 2);
+    Server srv(maxfd, 1);
 
 
     srv.setUseGarbageCollector(false);

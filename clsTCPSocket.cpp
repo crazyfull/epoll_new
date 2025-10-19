@@ -18,7 +18,7 @@ TCPSocket::socketStatus TCPSocket::getStatus() const
 void TCPSocket::setStatus(socketStatus newStatus)
 {
     //faghat zamani status mitone avaz beshe ke close nabashe
-    if(status != Closed)
+    if (status != Closed && status != Closing)
         status = newStatus;
 }
 
@@ -88,10 +88,58 @@ SocketContext *TCPSocket::getSocketContext()
 }
 
 void TCPSocket::handleOnData(const uint8_t *d, size_t n) {
-    if(onData_)
-        onData_(this, d, n);
+    if(m_onData){
+        m_onData(this, d, n);
+    }else{
+        onReceiveData(d, n);
+    }
 }
 
+void TCPSocket::handleOnAccepted()
+{
+    if(m_onAccepted){
+        m_onAccepted(this);
+    }else{
+        onAccepted();
+    }
+}
+
+void TCPSocket::handleOnClose()
+{
+    if(m_onClose){
+        m_onClose(this);
+    }else{
+        onClose();
+    }
+}
+
+void TCPSocket::handleOnConnectFailed()
+{
+    if(m_onConnectFailed){
+        m_onConnectFailed(this);
+    }else{
+        onConnectFailed();
+    }
+}
+
+void TCPSocket::handleOnConnecting()
+{
+    if(m_onConnecting){
+        m_onConnecting(this);
+    }else{
+        onConnecting();
+    }
+
+}
+
+void TCPSocket::handleOnConnected()
+{
+    if(m_onConnected){
+        m_onConnected(this);
+    }else{
+        onConnected();
+    }
+}
 
 
 void TCPSocket::pause_reading() {
@@ -156,7 +204,7 @@ void TCPSocket::close()
 
         //m_SocketContext.fd = -1;
         printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
-        this->onClose();
+        this->handleOnClose();
 
         //disable garbage collector
         //m_pReactor->deleteLater(this);
@@ -169,7 +217,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     if (!ips || count == 0) {
         printf("No result for %s\n", hostname);
         setStatus(Closed);
-        onConnectFailed();
+        handleOnConnectFailed();
         return;
     }
 
@@ -182,7 +230,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     if (m_SocketContext.fd == -1) {
         perror("socket creation failed");
         setStatus(Closed);
-        onConnectFailed();
+        handleOnConnectFailed();
         return;
     }
 
@@ -201,7 +249,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
         // اگر IPv4 نبود، می‌تونی IPv6 رو چک کنی (برای حالا ساده نگه می‌داریم)
         perror("inet_pton failed (IPv4 assumed)");
         setStatus(Closing);
-        onConnectFailed();
+        handleOnConnectFailed();
         close();
         return;
     }
@@ -212,10 +260,10 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
         // اتصال فوری موفق (نادر اما ممکن)
         if(adoptFd(m_SocketContext.fd, m_pReactor)){
             setStatus(Connected);
-            onConnected();
+            handleOnConnected();
         }else{
             setStatus(Closing);
-            onConnectFailed();
+            handleOnConnectFailed();
             close();
         }
 
@@ -231,7 +279,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
 
             bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TCP_SOCKET, this);
             if(ret){
-                onConnecting();
+                handleOnConnecting();
                 return;
             }
         }
@@ -240,7 +288,29 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     //
     perror("connect failed");
     setStatus(Closing);
-    onConnectFailed();
+    handleOnConnectFailed();
+    close();
+}
+
+void TCPSocket::_accepted()
+{
+    if(getStatus() != Ready){
+        //befor called
+        return;
+    }
+
+    bool ret = m_pReactor->register_fd(fd(), &getSocketContext()->ev, IS_TCP_SOCKET, this);
+    if(ret){
+        if(adoptFd(fd(), m_pReactor)){
+
+            setStatus(TCPSocket::Connected);
+            handleOnAccepted();  // callback
+            //continue;
+            return;
+        }
+    }
+
+    //be har dalili accept nashod close call beshe ke GC emal beshe
     close();
 }
 
@@ -255,7 +325,7 @@ void TCPSocket::connect_cb(const char *hostname, char **ips, size_t count, DNSLo
     pSocketBase->_connect(hostname, ips, count);
 }
 
-bool TCPSocket::connectTo(const std::string &host, uint16_t port)
+bool TCPSocket::connectTo(const char* host, uint16_t port)
 {
     if(!m_pReactor){
         printf("error: Reactor not found!\n");
@@ -269,7 +339,7 @@ bool TCPSocket::connectTo(const std::string &host, uint16_t port)
 
     setStatus(Connecting);
     m_SocketContext.port = port;
-    return m_pReactor->getIPbyName(host.c_str(), connect_cb, this);
+    return m_pReactor->getIPbyName(host, connect_cb, this);
 }
 
 int TCPSocket::fd() const
@@ -283,7 +353,32 @@ TCPSocket *TCPSocket::getPointer()
 }
 
 void TCPSocket::setOnData(OnDataFn fn) {
-    onData_ = fn;
+    m_onData = fn;
+}
+
+void TCPSocket::setOnAccepted(OnAcceptedFn fn)
+{
+    m_onAccepted = fn;
+}
+
+void TCPSocket::setOnClose(OnCloseFn fn)
+{
+    m_onClose= fn;
+}
+
+void TCPSocket::setOnConnectFailed(OnConnectFailedFn fn)
+{
+    m_onConnectFailed= fn;
+}
+
+void TCPSocket::setOnConnecting(OnConnectingFn fn)
+{
+    m_onConnecting= fn;
+}
+
+void TCPSocket::setOnConnected(OnConnectedFn fn)
+{
+    m_onConnected= fn;
 }
 
 bool TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
@@ -371,6 +466,7 @@ void TCPSocket::onReadable()
 
 
 void TCPSocket::send(const void* data, size_t len) {
+    //printf("TCPSocket::send: fd%d\n", m_SocketContext.fd);
     if (!data || len == 0)
         return;
 
@@ -412,11 +508,11 @@ void TCPSocket::onWritable() {
         return;
 
     // tashkhise inke darim connect mishim ya na #mohem
-    if (m_SocketContext.writeQueue->empty() && !m_pendingClose) {
+    if (getStatus() == Connecting && !m_pendingClose) {
         int err = getErrorCode();
         if (err != 0) {
             printf("connect failed: %s\n", strerror(err));
-            onConnectFailed();
+            handleOnConnectFailed();
             close();
             return;
         }
@@ -426,7 +522,7 @@ void TCPSocket::onWritable() {
 
         //connected sucessfully
         setStatus(Connected);
-        onConnected();
+        handleOnConnected();
         return;
     }
 
@@ -437,8 +533,6 @@ void TCPSocket::onWritable() {
 #else
     const size_t MAX_IOV = 1024;
 #endif
-
-
 
     while (!m_SocketContext.writeQueue->empty()) {
         printf("begin writing...\n");

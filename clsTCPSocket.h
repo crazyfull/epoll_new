@@ -31,7 +31,23 @@ public:
     uint64_t sndBytes = 0;
 
     void setReactor(EpollReactor* r);
-    using OnDataFn = void(*)(void* , const uint8_t* , size_t);     // (hot path)
+    using OnDataFn = void(*)(void* , const uint8_t* , size_t);
+    using OnAcceptedFn = void(*)(void*);
+    using OnCloseFn = void(*)(void*);
+    using OnConnectingFn = void(*)(void*);
+    using OnConnectedFn = void(*)(void*);
+    using OnConnectFailedFn = void(*)(void*);
+
+
+
+    void setOnData(OnDataFn fn);
+    void setOnAccepted(OnAcceptedFn fn);
+    void setOnClose(OnCloseFn fn);
+    void setOnConnectFailed(OnConnectFailedFn fn);
+    void setOnConnecting(OnConnectingFn fn);
+    void setOnConnected(OnConnectedFn fn);
+
+
     //using CloseCallback = std::function<void(int)>;                   // fd
     //using EpollModCallback = std::function<void(int, uint32_t)>;      // fd, newFlags
 
@@ -41,6 +57,7 @@ public:
     virtual void onConnectFailed(){}  // (non-hot)
     virtual void onConnecting(){}
     virtual void onConnected(){}
+    virtual void onReceiveData(const uint8_t* Data, size_t len){}
 
 
     // setter hot path entry — called by shard on EPOLLIN
@@ -54,14 +71,14 @@ public:
     // app-side send helper (thread-affinity: shard thread)
     void send(const void * data, size_t len);
     void close();
-    bool connectTo(const std::string &host, uint16_t port);
+    bool connectTo(const char *host, uint16_t port);
 
 
     // accessors
     int fd() const;
     TCPSocket *getPointer();
     //void setSocketContext(TCPConnectionHandle &c);
-    void setOnData(OnDataFn fn);
+
     bool adoptFd(int fd, EpollReactor *reactor);
 
     static void setSocketOption(int fd, int name, bool isEnable);
@@ -83,12 +100,18 @@ public:
     socketStatus getStatus() const;
 
     EpollReactor *getReactor() const;
+    void _accepted();
 
 protected:
-    OnDataFn onData_ { nullptr };
+    OnDataFn m_onData { nullptr };
+    OnAcceptedFn m_onAccepted { nullptr };
+    OnCloseFn m_onClose { nullptr };
+    OnConnectFailedFn m_onConnectFailed { nullptr };
+    OnConnectingFn m_onConnecting { nullptr };
+    OnConnectedFn m_onConnected { nullptr };
+
     struct SocketContext m_SocketContext {}; // composition with low-level TCP
     void _connect(const char *hostname, char **ips, size_t count);
-
     void setStatus(socketStatus newStatus);
 private:
     EpollReactor* m_pReactor = nullptr;
@@ -102,6 +125,12 @@ private:
     //CloseCallback close_cb_{};
     //EpollModCallback epoll_mod_cb_{};
     void handleOnData(const uint8_t * d, size_t n);
+    void handleOnAccepted();
+    void handleOnClose();
+    void handleOnConnectFailed();
+    void handleOnConnecting();
+    void handleOnConnected();
+
     static void connect_cb(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p);
 
 };
