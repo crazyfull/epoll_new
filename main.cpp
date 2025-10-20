@@ -35,10 +35,6 @@ public:
         return getPointer();
     }
 
-    void gooz(){
-        //std::printf("-------getStatus=%d\n", getStatus());
-        TCPSocket::send("gooz", 4);
-    }
 
 private:
     // non-virtual hot-path implementation
@@ -47,7 +43,7 @@ private:
 
 };
 
-class Connector: protected TCPSocket
+class Connector: public TCPSocket
 {
 public:
 
@@ -122,15 +118,20 @@ private:
 };
 
 
-class Proxy: public Acceptor, public Connector{
+class Proxy: public Acceptor{
 public:
+    Connector *m_pConnector;
     std::string buff;
 
     Proxy(){
-        Connector::setOnData(&Proxy::onConnectorReceiveData);
+        m_pConnector = new Connector;
+        m_pConnector->setOnData(&Proxy::onConnectorReceiveData, this);
+        m_pConnector->setOnClose(&Proxy::onConnectorClose, this);
+        m_pConnector->setOnConnectFailed(&Proxy::onConnectFailed, this);
+        m_pConnector->setOnConnecting(&Proxy::onConnecting, this);
+        m_pConnector->setOnConnected(&Proxy::onConnected, this);
 
-        Acceptor::setOnData(&Proxy::onAcceptorReceiveData);
-
+        Acceptor::setOnData(&Proxy::onAcceptorReceiveData, this);
     }
 
     ~Proxy(){
@@ -144,9 +145,10 @@ public:
     void onAccepted() override {
         printf("onAccepted() fd=%d\n", Acceptor::fd());
 
-        Connector::setReactor(Acceptor::getReactor());
-        //Connector::coonect("dl.mojz.ir", 443);
-        Connector::coonect("192.168.1.10", 9000);
+        m_pConnector->setReactor(Acceptor::getReactor());
+        //m_pConnector->coonect("51.195.150.84", 80);
+        m_pConnector->coonect("cl.mojz.ir", 443);
+        //m_pConnector->coonect("192.168.1.10", 9000);
 
     }
 
@@ -156,8 +158,39 @@ public:
     }
 
 
-    void onConnected() override {
-        printf("onConnected() fd: %d\n", Connector::fd());
+
+private:
+    static void onConnectorReceiveData(void *b, const uint8_t *data, size_t length)
+    {
+        static_cast<Proxy*>(b)->OnConnectorReceiveData(data, length);
+    }
+
+    static void onConnectorClose(void *b)
+    {
+        static_cast<Proxy*>(b)->OnConnectorClose();
+    }
+
+    static void onConnectFailed(void *b)
+    {
+        static_cast<Proxy*>(b)->OnConnectFailed();
+    }
+
+    static void onConnecting(void *p)
+    {
+        Proxy *pProxy = static_cast<Proxy*>(p);
+        //printf("handleOnConnecting() fd=%d\n", this->fd());
+
+        pProxy->onConnectorConnecting();
+    }
+
+    static void onConnected(void *b)
+    {
+        static_cast<Proxy*>(b)->OnConnected();
+    }
+
+
+    void OnConnected() {
+        printf("onConnected() fd=%d\n", m_pConnector->fd());
 
 
         //std::string pck = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+";
@@ -173,35 +206,40 @@ public:
         */
 
         if(buff.length() > 0){
-            Connector::send(buff.c_str(), buff.length());
+            m_pConnector->send(buff.c_str(), buff.length());
             buff.clear();
         }
-
-
     }
 
-    void onConnecting() override {
-        std::printf("onConnecting %d\n", Connector::fd());
+    void onConnectorConnecting() {
+        printf("onConnectorConnecting() fd=%d\n", m_pConnector->fd());
     }
 
-    void onConnectFailed() override {
-        std::printf("onConnectFailed %d\n", Connector::fd());
+    void OnConnectFailed() {
+        printf("onConnectFailed() fd=%d\n", m_pConnector->fd());
     }
 
-    void onConnectorClose() override {
-        printf("onConnectorClose() fd=%d\n", Connector::fd());
+    void OnConnectorClose()  {
+        printf("onConnectorClose() fd=%d\n", m_pConnector->fd());
     }
 
-private:
-
-    static void onAcceptorReceiveData(void *b, const uint8_t *data, size_t length)
+    void OnConnectorReceiveData(const uint8_t *data, size_t length)
     {
-        static_cast<Proxy*>(b)->onAcceptorReceiveData(data, length);
+       // printf("Connector::fd(): fd[%d] ClassName: %s\n", m_pConnector->fd(), Connector::ClassName());
+       // printf("Acceptor::fd(): fd[%d] ClassName: %s\n", Acceptor::fd(), Acceptor::ClassName());
+
+
+        if(Acceptor::getStatus() == TCPSocket::Connected) {
+            printf("Acceptor::send length[%zu]\n", length );
+            Acceptor::send(data, length);
+        } else {
+            printf("🔴 Acceptor not connected, dropping data\n");
+        }
     }
 
-    static void onConnectorReceiveData(void *b, const uint8_t *data, size_t length)
+    static void onAcceptorReceiveData(void *p, const uint8_t *data, size_t length)
     {
-        static_cast<Proxy*>(b)->onConnectorReceiveData(data, length);
+        static_cast<Proxy*>(p)->onAcceptorReceiveData(data, length);
     }
 
     void onAcceptorReceiveData(const uint8_t *data, size_t length)
@@ -223,36 +261,23 @@ private:
         */
 
         //printf("Acceptor data: len[%zu]\n", length);
-        printf("Connector::fd(): fd[%d] ClassName: %s\n", Connector::fd(), Connector::ClassName());
-        printf("Acceptor::fd(): fd[%d] ClassName: %s\n", Acceptor::fd(), Acceptor::ClassName());
+        //printf("Connector::fd(): fd[%d] ClassName: %s\n", m_pConnector->fd(), Connector::ClassName());
+        //printf("Acceptor::fd(): fd[%d] ClassName: %s\n", Acceptor::fd(), Acceptor::ClassName());
 
 
-        if(Connector::getStatus() == TCPSocket::Connected) {
-            printf("Connector::send data[%s]\n", data );
+        if(m_pConnector->getStatus() == TCPSocket::Connected) {
+            printf("Connector::send length[%zu]\n", length );
 
-            Connector::send(data, length);
+            m_pConnector->send(data, length);
 
         } else {
             // ذخیره در بافر تا زمانی که connector متصل شود
             buff.append((const char*)data, length);
         }
 
-        gooz();
     }
 
-    void onConnectorReceiveData(const uint8_t *data, size_t length)
-    {
-        printf("Connector::fd(): fd[%d] ClassName: %s\n", Connector::fd(), Connector::ClassName());
-        printf("Acceptor::fd(): fd[%d] ClassName: %s\n", Acceptor::fd(), Acceptor::ClassName());
 
-        //gooz();
-
-        if(Acceptor::getStatus() == TCPSocket::Connected) {
-            Acceptor::send(data, length);
-        } else {
-            printf("🔴 Acceptor not connected, dropping data\n");
-        }
-    }
 
 
 
@@ -294,7 +319,7 @@ int main()
 
 
     srv.setUseGarbageCollector(false);
-    srv.AddNewListener(8080, "0.0.0.0");
+    srv.AddNewListener(8443, "0.0.0.0");
     srv.setOnAccepted(OnAccepted, &srv);
 
 

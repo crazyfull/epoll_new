@@ -31,21 +31,25 @@ public:
     uint64_t sndBytes = 0;
 
     void setReactor(EpollReactor* r);
-    using OnDataFn = void(*)(void* , const uint8_t* , size_t);
+
+    using OnDataFn = void(*)(void* , const uint8_t* data, size_t len);
+    //using OnConnectingFn = void(*)(void* routin, void* p);
+    using OnConnectingFn = void(*)(void* p);
+
     using OnAcceptedFn = void(*)(void*);
     using OnCloseFn = void(*)(void*);
-    using OnConnectingFn = void(*)(void*);
     using OnConnectedFn = void(*)(void*);
     using OnConnectFailedFn = void(*)(void*);
 
 
 
-    void setOnData(OnDataFn fn);
-    void setOnAccepted(OnAcceptedFn fn);
-    void setOnClose(OnCloseFn fn);
-    void setOnConnectFailed(OnConnectFailedFn fn);
-    void setOnConnecting(OnConnectingFn fn);
-    void setOnConnected(OnConnectedFn fn);
+    void setOnData(OnDataFn fn, void *Arg);
+    void setOnConnecting(OnConnectingFn fn, void* Arg);
+    void setOnConnected(OnConnectedFn fn, void *Arg);
+
+    void setOnAccepted(OnAcceptedFn fn, void* Arg);
+    void setOnClose(OnCloseFn fn, void* Arg);
+    void setOnConnectFailed(OnConnectFailedFn fn, void* Arg);
 
 
     //using CloseCallback = std::function<void(int)>;                   // fd
@@ -79,7 +83,7 @@ public:
     TCPSocket *getPointer();
     //void setSocketContext(TCPConnectionHandle &c);
 
-    bool adoptFd(int fd, EpollReactor *reactor);
+    bool adoptFd(int fd);
 
     static void setSocketOption(int fd, int name, bool isEnable);
     static void setSocketShared(int fd, bool isEnable);
@@ -100,7 +104,7 @@ public:
     socketStatus getStatus() const;
 
     EpollReactor *getReactor() const;
-    void _accepted();
+    void _accepted(int fd);
 
 protected:
     OnDataFn m_onData { nullptr };
@@ -109,6 +113,9 @@ protected:
     OnConnectFailedFn m_onConnectFailed { nullptr };
     OnConnectingFn m_onConnecting { nullptr };
     OnConnectedFn m_onConnected { nullptr };
+
+    //argumnets
+    void* m_callbacksArg { nullptr };
 
     struct SocketContext m_SocketContext {}; // composition with low-level TCP
     void _connect(const char *hostname, char **ips, size_t count);

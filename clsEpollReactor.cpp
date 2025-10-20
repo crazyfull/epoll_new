@@ -246,7 +246,8 @@ void EpollReactor::adoptAccepted(int m_fd) {
             continue;
         }
 
-        pSocketbase->_accepted();
+        pSocketbase->setReactor(this);
+        pSocketbase->_accepted(fd);
 
     }
 }

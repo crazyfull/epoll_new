@@ -89,7 +89,7 @@ SocketContext *TCPSocket::getSocketContext()
 
 void TCPSocket::handleOnData(const uint8_t *d, size_t n) {
     if(m_onData){
-        m_onData(this, d, n);
+        m_onData(m_callbacksArg, d, n);
     }else{
         onReceiveData(d, n);
     }
@@ -98,7 +98,7 @@ void TCPSocket::handleOnData(const uint8_t *d, size_t n) {
 void TCPSocket::handleOnAccepted()
 {
     if(m_onAccepted){
-        m_onAccepted(this);
+        m_onAccepted(m_callbacksArg);
     }else{
         onAccepted();
     }
@@ -107,7 +107,7 @@ void TCPSocket::handleOnAccepted()
 void TCPSocket::handleOnClose()
 {
     if(m_onClose){
-        m_onClose(this);
+        m_onClose(m_callbacksArg);
     }else{
         onClose();
     }
@@ -116,7 +116,7 @@ void TCPSocket::handleOnClose()
 void TCPSocket::handleOnConnectFailed()
 {
     if(m_onConnectFailed){
-        m_onConnectFailed(this);
+        m_onConnectFailed(m_callbacksArg);
     }else{
         onConnectFailed();
     }
@@ -125,17 +125,18 @@ void TCPSocket::handleOnConnectFailed()
 void TCPSocket::handleOnConnecting()
 {
     if(m_onConnecting){
-        m_onConnecting(this);
+
+        m_onConnecting(m_callbacksArg);
+
     }else{
         onConnecting();
     }
-
 }
 
 void TCPSocket::handleOnConnected()
 {
     if(m_onConnected){
-        m_onConnected(this);
+        m_onConnected(m_callbacksArg);
     }else{
         onConnected();
     }
@@ -258,7 +259,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     int ret = ::connect(m_SocketContext.fd, (struct sockaddr*)&addr, sizeof(addr));
     if (ret == 0) {
         // اتصال فوری موفق (نادر اما ممکن)
-        if(adoptFd(m_SocketContext.fd, m_pReactor)){
+        if(adoptFd(m_SocketContext.fd)){
             setStatus(Connected);
             handleOnConnected();
         }else{
@@ -273,7 +274,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     if (errno == EINPROGRESS) {
 
         // اتصال در حال انجام (non-blocking)
-        if(adoptFd(m_SocketContext.fd, m_pReactor)){
+        if(adoptFd(m_SocketContext.fd)){
             //set events
             m_SocketContext.ev.events = EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING | EPOLLOUT | EPOLLERR;
 
@@ -292,16 +293,16 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     close();
 }
 
-void TCPSocket::_accepted()
+void TCPSocket::_accepted(int fd)
 {
     if(getStatus() != Ready){
         //befor called
         return;
     }
 
-    bool ret = m_pReactor->register_fd(fd(), &getSocketContext()->ev, IS_TCP_SOCKET, this);
+    bool ret = m_pReactor->register_fd(fd, &getSocketContext()->ev, IS_TCP_SOCKET, this);
     if(ret){
-        if(adoptFd(fd(), m_pReactor)){
+        if(adoptFd(fd)){
 
             setStatus(TCPSocket::Connected);
             handleOnAccepted();  // callback
@@ -352,42 +353,49 @@ TCPSocket *TCPSocket::getPointer()
     return this;
 }
 
-void TCPSocket::setOnData(OnDataFn fn) {
+void TCPSocket::setOnData(OnDataFn fn, void* Arg) {
     m_onData = fn;
+    m_callbacksArg = Arg;
 }
 
-void TCPSocket::setOnAccepted(OnAcceptedFn fn)
+void TCPSocket::setOnConnecting(OnConnectingFn fn, void* Arg)
 {
-    m_onAccepted = fn;
+    m_onConnecting = fn;
+    m_callbacksArg = Arg;
 }
 
-void TCPSocket::setOnClose(OnCloseFn fn)
-{
-    m_onClose= fn;
-}
-
-void TCPSocket::setOnConnectFailed(OnConnectFailedFn fn)
-{
-    m_onConnectFailed= fn;
-}
-
-void TCPSocket::setOnConnecting(OnConnectingFn fn)
-{
-    m_onConnecting= fn;
-}
-
-void TCPSocket::setOnConnected(OnConnectedFn fn)
+void TCPSocket::setOnConnected(OnConnectedFn fn, void* Arg)
 {
     m_onConnected= fn;
+    m_callbacksArg = Arg;
 }
 
-bool TCPSocket::adoptFd(int fd, EpollReactor *reactor) {
+void TCPSocket::setOnAccepted(OnAcceptedFn fn, void* Arg)
+{
+    m_onAccepted = fn;
+    m_callbacksArg = Arg;
+}
+
+void TCPSocket::setOnClose(OnCloseFn fn, void *Arg)
+{
+    m_onClose= fn;
+    m_callbacksArg = Arg;
+}
+
+void TCPSocket::setOnConnectFailed(OnConnectFailedFn fn, void *Arg)
+{
+    m_onConnectFailed= fn;
+    m_callbacksArg = Arg;
+}
+
+
+
+bool TCPSocket::adoptFd(int fd) {
 
     int sndbuf = 1 * 1024; // 16KB
     //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
     //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
 
-    setReactor(reactor);
 
     //printf("allocate size: %zu\n", m_pReactor->bufferPool()->size());
 
