@@ -23,6 +23,7 @@ SOURCES += \
         clsSendQueue.cpp \
         clsServer.cpp \
         clsSocketList.cpp \
+        clsSocks5Proxy.cpp \
         clsTCPSocket.cpp \
         clsTimer.cpp \
         clsTimerManager.cpp \
@@ -38,6 +39,7 @@ HEADERS += \
     clsServer.h \
     clsGCList.h \
     clsSocketList.h \
+    clsSocks5Proxy.h \
     clsTCPSocket.h \
     clsTimer.h \
     clsTimerManager.h \

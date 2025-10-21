@@ -181,6 +181,8 @@ int TCPSocket::getErrorCode()
 /**/
 void TCPSocket::close()
 {
+    if(!m_pReactor || m_SocketContext.fd == -1)
+        return;
 
     if(getStatus() != Closed){
 
