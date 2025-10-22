@@ -16,10 +16,10 @@ constexpr unsigned int DNS_MAX_RETRIES = 3;
 
 //buffer config
 static constexpr size_t BUFFER_POOL_SIZE = 10 * (1024*1024);    //100 MG
-static constexpr size_t BACK_PRESSURE = 512*1024;               //1*(1024*1024); //1 MG
+static constexpr size_t BACK_PRESSURE = 128*1024;               //1*(1024*1024); //1 MG
 static constexpr size_t SLAB_SIZE = 8 * 1024;                   // 8KB socket buffer
 //static constexpr size_t HIGH_WATERMARK = 64 * 1024;
-static constexpr size_t LOW_WATERMARK = 128 * 1024;
+static constexpr size_t LOW_WATERMARK = 64 * 1024;
 
 
 // Timer Intervals (in milliseconds)

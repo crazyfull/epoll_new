@@ -120,11 +120,13 @@ void EpollReactor::removeFlags(SocketContext *pContext, uint32_t flags)
     if (pContext->ev.events & flags) {
         pContext->ev.events &= ~flags;
 
-        //printf("mod_remove() flags: %d\n", flags);
+        printf("mod_remove() flags: %d\n", flags);
 
         if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
             perror("EPOLL_CTL_MOD mod_remove");
         }
+    }else{
+        printf("removeFlags00000000000000000000000000000000000\n");
     }
 }
 

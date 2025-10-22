@@ -39,10 +39,14 @@ public:
         connector.setOnConnectFailed(&Socks5Proxy::onConnectFailedTrampoline, this);
         connector.setOnConnecting(&Socks5Proxy::onConnectingTrampoline, this);
         connector.setOnConnected(&Socks5Proxy::onConnectedTrampoline, this);
+        connector.setOnPause(&Socks5Proxy::onConnectorPauseTrampoline, this);
+        connector.setOnResume(&Socks5Proxy::onConnectorResumeTrampoline, this);
 
         acceptor.setOnData(&Socks5Proxy::onAcceptorReceiveDataTrampoline, this);
         acceptor.setOnClose(&Socks5Proxy::onAcceptorCloseTrampoline, this);
         acceptor.setOnAccepted(&Socks5Proxy::onAcceptedTrampoline, this);
+        acceptor.setOnPause(&Socks5Proxy::onAcceptorPauseTrampoline, this);
+        acceptor.setOnResume(&Socks5Proxy::onAcceptorResumeTrampoline, this);
     }
 
     ~Socks5Proxy() {
@@ -73,6 +77,9 @@ public:
 */
 
 private:
+    bool isPropagatingPause = false;
+    bool isPropagatingResume = false;
+
     // Static trampolines for callbacks
     static void onConnectorReceiveDataTrampoline(void* p, const uint8_t* data, size_t length) {
         static_cast<Socks5Proxy*>(p)->OnConnectorReceiveData(data, length);
@@ -104,6 +111,22 @@ private:
 
     static void onAcceptedTrampoline(void* p) {
         static_cast<Socks5Proxy*>(p)->OnAccepted();
+    }
+
+    static void onAcceptorPauseTrampoline(void* p) {
+        static_cast<Socks5Proxy*>(p)->OnAcceptorPause();
+    }
+
+    static void onAcceptorResumeTrampoline(void* p) {
+        static_cast<Socks5Proxy*>(p)->OnAcceptorResume();
+    }
+
+    static void onConnectorPauseTrampoline(void* p) {
+        static_cast<Socks5Proxy*>(p)->OnConnectorPause();
+    }
+
+    static void onConnectorResumeTrampoline(void* p) {
+        static_cast<Socks5Proxy*>(p)->OnConnectorResume();
     }
 
     // Implementation methods
@@ -189,6 +212,43 @@ private:
                 break;
             }
         }
+    }
+
+
+    void OnAcceptorPause() {
+        if (isPropagatingPause)
+            return;
+        isPropagatingPause = true;
+        printf("Acceptor paused, propagating to connector\n");
+        connector.pause_reading();
+        isPropagatingPause = false;
+    }
+
+    void OnAcceptorResume() {
+        if (isPropagatingResume)
+            return;
+        isPropagatingResume = true;
+        printf("Acceptor resumed, propagating to connector\n");
+        connector.resume_reading();
+        isPropagatingResume = false;
+    }
+
+    void OnConnectorPause() {
+        if (isPropagatingPause)
+            return;
+        isPropagatingPause = true;
+        printf("Connector paused, propagating to acceptor\n");
+        acceptor.pause_reading();
+        isPropagatingPause = false;
+    }
+
+    void OnConnectorResume() {
+        if (isPropagatingResume)
+            return;
+        isPropagatingResume = true;
+        printf("Connector resumed, propagating to acceptor\n");
+        acceptor.resume_reading();
+        isPropagatingResume = false;
     }
 
     bool ProcessGreeting() {
@@ -309,7 +369,7 @@ private:
     void ForwardToConnector() {
         if (connector.getStatus() == TCPSocket::Connected && state == Socks5State::Connected) {
             //printf("connector::send length[%zu]\n", clientBuffer.size());
-            connector.send(clientBuffer.data(), clientBuffer.size());
+            connector.send(clientBuffer.data(), clientBuffer.size()); //inja bayad pause rresume anjam beshe
         } else {
             // Buffer if not connected yet
             connectorBuffer.insert(connectorBuffer.end(), clientBuffer.begin(), clientBuffer.end());

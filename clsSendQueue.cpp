@@ -1,5 +1,6 @@
 #include "clsSendQueue.h"
 #include <cstdio>
+#include <unistd.h>
 
 
 SendQueue::SendQueue(BufferPool &pool) : m_pool(pool) {
@@ -19,6 +20,7 @@ void SendQueue::push(const void *data, size_t len) {
         //printf("SendQueue::push: [%zu] size[%zuKB]\n", len, m_len / 1024);//m_queue.size()
     }else{
         printf("SendQueue::push: can not allocate\n");
+        //sleep(1);
     }
 }
 

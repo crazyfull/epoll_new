@@ -142,29 +142,33 @@ void TCPSocket::handleOnConnected()
     }
 }
 
+void TCPSocket::handleOnPause() {
+    if (m_onPause)
+        m_onPause(m_callbacksArg);
+}
+
+void TCPSocket::handleOnResume() {
+    if (m_onResume)
+        m_onResume(m_callbacksArg);
+}
 
 void TCPSocket::pause_reading() {
     if (!m_pReactor || m_readPaused)
-        return;
-    printf("pause_reading()\n");
-
+        return;  // جلوگیری از تکرار
+    printf("pause_reading(%d)\n", m_readPaused);
     m_readPaused = true;
-    m_pReactor->removeFlags(&m_SocketContext, EPOLLIN); // Disable EPOLLIN
-
+    m_pReactor->removeFlags(&m_SocketContext, EPOLLIN);
+    handleOnPause();  // trigger callback
 }
 
 void TCPSocket::resume_reading() {
-    printf("try to resume_reading() m_readPaused: %d, ev.events %u\n", m_readPaused, m_SocketContext.ev.events);
     if (!m_pReactor || !m_readPaused)
         return;
 
-    if(m_readPaused){
-        printf("resume_reading()\n");
-        if (!(m_SocketContext.ev.events & EPOLLIN)){
-            m_readPaused = false;
-            m_pReactor->addFlags(&m_SocketContext,  EPOLLIN);
-        }
-    }
+    printf("resume_reading()\n");
+    m_readPaused = false;
+    m_pReactor->addFlags(&m_SocketContext, EPOLLIN);
+    handleOnResume();  // trigger callback
 }
 
 int TCPSocket::getErrorCode()
@@ -194,6 +198,11 @@ void TCPSocket::close()
         if(m_SocketContext.rBuffer) {
             m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
             m_SocketContext.rBuffer = nullptr;
+        }
+
+        //check graceful shutdown
+        if(!m_SocketContext.writeQueue->empty()){
+            printf("graceful shutdown!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
         }
 
         m_SocketContext.writeQueue->clear();
@@ -390,6 +399,15 @@ void TCPSocket::setOnConnectFailed(OnConnectFailedFn fn, void *Arg)
     m_callbacksArg = Arg;
 }
 
+void TCPSocket::setOnPause(OnPauseFn fn, void* Arg) {
+    m_onPause = fn;
+    m_callbacksArg = Arg;
+}
+
+void TCPSocket::setOnResume(OnResumeFn fn, void* Arg) {
+    m_onResume = fn;
+    m_callbacksArg = Arg;
+}
 
 
 bool TCPSocket::adoptFd(int fd) {
@@ -487,13 +505,12 @@ void TCPSocket::send(const void* data, size_t len) {
             data = (const char*)data + n;
             len -= (size_t)n;
             if (len == 0)
-                return; // همه ارسال شد
+                return; // hame ersal shod
             break;
         }
         if (n == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                break; // kernel buffer پر است
-            } else {
+                break; // kernel buffer por shod
                 close();
                 return;
             }
@@ -504,7 +521,10 @@ void TCPSocket::send(const void* data, size_t len) {
 
         m_SocketContext.writeQueue->push(data, len); // add to Queue list
 
+        //printf("m_SocketContext.writeQueue->size()  size=%zu\n", m_SocketContext.writeQueue->size());
+
         if (m_SocketContext.writeQueue->size() > BACK_PRESSURE) {
+            //printf("pause_reading()  size=%zu\n", m_SocketContext.writeQueue->size());
             pause_reading();
         }else{
             m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);

@@ -8,6 +8,9 @@ CONFIG -= qt
 #accept4: Too many open files
 #accept4: Too many open files
 
+#graceful shutdown piade sazi nashode
+# age az biroon close call beshe ama safe ersal khali nabashe dorost nist
+
 #kheyli mohem set beshe baraye proxy server
 # اینطوری کانکشن‌های کوتاه‌مدت هزاران TIME_WAIT نمی‌سازن.
 # net.ipv4.tcp_tw_reuse = 1

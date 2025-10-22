@@ -41,6 +41,9 @@ public:
     using OnConnectedFn = void(*)(void*);
     using OnConnectFailedFn = void(*)(void*);
 
+    using OnPauseFn = void(*)(void* p);
+    using OnResumeFn = void(*)(void* p);
+
 
 
     void setOnData(OnDataFn fn, void *Arg);
@@ -50,6 +53,9 @@ public:
     void setOnAccepted(OnAcceptedFn fn, void* Arg);
     void setOnClose(OnCloseFn fn, void* Arg);
     void setOnConnectFailed(OnConnectFailedFn fn, void* Arg);
+
+    void setOnPause(OnPauseFn fn, void* Arg);
+    void setOnResume(OnResumeFn fn, void* Arg);
 
 
     //using CloseCallback = std::function<void(int)>;                   // fd
@@ -114,6 +120,9 @@ protected:
     OnConnectingFn m_onConnecting { nullptr };
     OnConnectedFn m_onConnected { nullptr };
 
+    OnPauseFn m_onPause { nullptr };
+    OnResumeFn m_onResume { nullptr };
+
     //argumnets
     void* m_callbacksArg { nullptr };
 
@@ -137,6 +146,8 @@ private:
     void handleOnConnectFailed();
     void handleOnConnecting();
     void handleOnConnected();
+    void handleOnPause();
+    void handleOnResume();
 
     static void connect_cb(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p);
 
