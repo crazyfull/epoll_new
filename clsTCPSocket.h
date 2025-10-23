@@ -80,7 +80,7 @@ public:
 
     // app-side send helper (thread-affinity: shard thread)
     void send(const void * data, size_t len);
-    void close();
+    void close(bool force = false);
     bool connectTo(const char *host, uint16_t port);
 
 

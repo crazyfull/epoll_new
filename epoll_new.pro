@@ -11,6 +11,8 @@ CONFIG -= qt
 #graceful shutdown piade sazi nashode
 # age az biroon close call beshe ama safe ersal khali nabashe dorost nist
 
+#پیشنهاد: در EpollReactor::maintenance() یا TimerManager، سوکت‌هایی که status == Closing و مدت طولانی (مثل >30s) در این حالت هستن رو چک کنید و close(true) کنید.
+
 #kheyli mohem set beshe baraye proxy server
 # اینطوری کانکشن‌های کوتاه‌مدت هزاران TIME_WAIT نمی‌سازن.
 # net.ipv4.tcp_tw_reuse = 1

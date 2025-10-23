@@ -343,14 +343,10 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
     }
 
     if (ev & EPOLLERR) {
-        int err = 0;
-        socklen_t len = sizeof(err);
-        getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
+        int err = pSockBase->getErrorCode();
         printf("EPOLLERR: fd=%d, error=%d\n", fd, err);
-        pSockBase->close();
 
-        //#mohem in ghesmat bayad bere to close() chon zamani ke shutdown anjam mishe in event call nemishe
-        //m_GCList.retire(pSockBase);     //mohem
+        pSockBase->close(true);
         return;
     }
 
@@ -554,6 +550,25 @@ void EpollReactor::wake() {
 
 void EpollReactor::maintenance()
 {
+
+
+    /* mohem
+    auto now = std::chrono::steady_clock::now();
+    m_pConnectionList->for_each([&](SockInfo* sockInfo) {
+        if (sockInfo->type == IS_TCP_SOCKET) {
+            TCPSocket* sock = static_cast<TCPSocket*>(sockInfo->socketBasePtr);
+            if (sock->getStatus() == TCPSocket::Closing) {
+                auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+                                    now - sock->getSocketContext()->lastActive).count();
+                if (duration > 30) {  // Timeout 30 ثانیه
+                    printf("Timeout for Closing socket: fd=%d\n", sock->fd());
+                    sock->close(true);  // Force close
+                    m_GCList.retire(sock);
+                }
+            }
+        }
+    });
+*/
 
     // (13) idle cull
     /*

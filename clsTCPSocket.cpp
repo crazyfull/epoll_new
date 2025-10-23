@@ -18,7 +18,7 @@ TCPSocket::socketStatus TCPSocket::getStatus() const
 void TCPSocket::setStatus(socketStatus newStatus)
 {
     //faghat zamani status mitone avaz beshe ke close nabashe
-    if (status != Closed && status != Closing)
+    if (status != Closed)
         status = newStatus;
 }
 
@@ -182,47 +182,97 @@ int TCPSocket::getErrorCode()
     return err;
 }
 
-/**/
+/*
 void TCPSocket::close()
 {
-    if(!m_pReactor || m_SocketContext.fd == -1)
+    if (!m_pReactor || m_SocketContext.fd == -1 || getStatus() == Closed)
         return;
 
-    if(getStatus() != Closed){
+
+    setStatus(Closed);
+
+    //delere from epoll and ConnectionList
+    m_pReactor->del_fd(m_SocketContext.fd, true);
+
+    if(m_SocketContext.rBuffer) {
+        m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
+        m_SocketContext.rBuffer = nullptr;
+    }
+
+    //check graceful shutdown
+    if(!m_SocketContext.writeQueue->empty()){
+        printf("graceful shutdown!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    }
+
+    m_SocketContext.writeQueue->clear();
+    ::shutdown(m_SocketContext.fd, SHUT_RDWR);
+    ::close(m_SocketContext.fd);
+
+
+    //writeQueue dar SocketContext free mishe
+
+    printf("close()\n");
+
+    //m_SocketContext.fd = -1;
+    printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
+    this->handleOnClose();
+
+
+
+
+}
+*/
+
+
+void TCPSocket::close(bool force) {
+    if (!m_pReactor || m_SocketContext.fd == -1 || getStatus() == Closed)
+        return;
+
+    if (m_SocketContext.writeQueue->empty() || force == true) {
+        printf("TCPSocket::close !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %d \n", fd());
+        //
 
         setStatus(Closed);
-
         //delere from epoll and ConnectionList
         m_pReactor->del_fd(m_SocketContext.fd, true);
 
-        if(m_SocketContext.rBuffer) {
+        if (m_SocketContext.rBuffer) {
             m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
             m_SocketContext.rBuffer = nullptr;
         }
 
-        //check graceful shutdown
-        if(!m_SocketContext.writeQueue->empty()){
-            printf("graceful shutdown!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+        if (force) {
+            m_SocketContext.writeQueue->clear();
         }
 
-        m_SocketContext.writeQueue->clear();
-        ::shutdown(m_SocketContext.fd, SHUT_RDWR);
+
+        ::shutdown(m_SocketContext.fd, SHUT_WR);
         ::close(m_SocketContext.fd);
 
 
-        //writeQueue dar SocketContext free mishe
-
-        printf("close()\n");
-
-        //m_SocketContext.fd = -1;
         printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
-        this->handleOnClose();
+        handleOnClose();
 
         //disable garbage collector
         //m_pReactor->deleteLater(this);
-    }
 
+    } else {
+        printf("graceful shutdown>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> %d \n", fd());
+        //handleHalfClose();
+        /**/
+        // pending برای graceful
+        m_pendingClose = true;
+        setStatus(Closing);
+        ::shutdown(m_SocketContext.fd, SHUT_WR);  // بستن write، اما fd باز بمونه
+        m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);  // برای خالی کردن queue
+        printf("pending close: waiting for queue to drain\n");
+
+    }
+    // حذف clear queue!
 }
+
+
+
 
 void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
 {
@@ -508,10 +558,12 @@ void TCPSocket::send(const void* data, size_t len) {
                 return; // hame ersal shod
             break;
         }
+
         if (n == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break; // kernel buffer por shod
-                close();
+            } else {
+                close(true);
                 return;
             }
         }
@@ -533,17 +585,27 @@ void TCPSocket::send(const void* data, size_t len) {
     }
 }
 
+
 void TCPSocket::onWritable() {
+
+
+    if (getStatus() == Closing){
+        printf("onWritable shutdown<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<,%d \n", fd());
+
+    }
+
     if (!m_SocketContext.writeQueue)
         return;
 
+    int err = getErrorCode();
+
     // tashkhise inke darim connect mishim ya na #mohem
     if (getStatus() == Connecting && !m_pendingClose) {
-        int err = getErrorCode();
+
         if (err != 0) {
             printf("connect failed: %s\n", strerror(err));
             handleOnConnectFailed();
-            close();
+            close(true);  // Force close برای خطاها
             return;
         }
 
@@ -555,6 +617,14 @@ void TCPSocket::onWritable() {
         handleOnConnected();
         return;
     }
+
+    if (err != 0) {
+        printf("EPOLLERR in onWritable: fd=%d, error=%d\n", fd(), err);
+        close(true);
+        return;
+    }
+
+
 
     // ادامه کد اصلی برای ارسال داده‌ها (با بهبود: استفاده از sendmsg و iovec برای batch)
     const size_t MAX_BATCH_BYTES = 256 * 1024; //256KB tunable: max bytes per sendmsg
@@ -653,12 +723,28 @@ void TCPSocket::onWritable() {
 
     }
 
-
+    /*
     if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
         printf("End\n");
-        close();
+        close(true);
         return;
     }
+    */
+
+    //hazf beshe
+    if (m_SocketContext.writeQueue->empty() && m_pendingClose) {
+        setStatus(Closed);
+        m_pReactor->del_fd(m_SocketContext.fd, true);
+        if (m_SocketContext.rBuffer) {
+            m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
+            m_SocketContext.rBuffer = nullptr;
+        }
+        ::close(m_SocketContext.fd);  // حذف SHUT_RDWR
+        printf("graceful close: queue drained-------------------------------------------------------------------------------\n");
+        handleOnClose();
+        return;
+    }
+
 
     //resume
     if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) {
@@ -689,19 +775,17 @@ void TCPSocket::handleHalfClose() {
     if (ret == 0) {
 
         if (!m_SocketContext.writeQueue->empty()) {
-            printf("m_pendingClose: %d\n", m_pendingClose);
-            //if(m_pendingClose == false){
+            m_pendingClose = true;
+            setStatus(Closing);
             m_pReactor->addFlags(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
             printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
-            //}
         } else {
             //printf("handleHalfClose bytesRec == 0 close()\n");
             close();
             return;
         }
 
-        m_pendingClose = true;
-        setStatus(Closing);
+
     } else if (ret < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
         printf("handleHalfClose errno\n");
 

@@ -2,6 +2,7 @@
 #define CLSSOCKS5PROXY_H
 
 #include "clsTCPSocket.h"
+#include <iostream>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -27,8 +28,8 @@ class Socks5Proxy {
 public:
     TCPSocket acceptor;
     TCPSocket connector;
-    std::vector<uint8_t> clientBuffer;  // Buffer for incoming client data (high-performance, resizable)
-    std::vector<uint8_t> connectorBuffer;  // Buffer for pending data to connector if not yet connected
+    std::vector<uint8_t> m_clientBuffer;  // Buffer for incoming client data (high-performance, resizable)
+    std::vector<uint8_t> m_connectorBuffer;  // Buffer for pending data to connector if not yet connected
     Socks5State state;
     bool supportsNoAuth;  // From greeting
 
@@ -159,13 +160,14 @@ private:
         reply[1] = 0x00;  // Succeeded
         reply[2] = 0x00;  // Reserved
         reply[3] = 0x01;  // Assume IPv4 for bound address (can be dummy)
+
         // Bound address and port can be 0.0.0.0:0 for simplicity
         acceptor.send(reply.data(), 10);
 
         // Flush any buffered data to connector
-        if (!connectorBuffer.empty()) {
-            connector.send(connectorBuffer.data(), connectorBuffer.size());
-            connectorBuffer.clear();
+        if (!m_connectorBuffer.empty()) {
+            connector.send(m_connectorBuffer.data(), m_connectorBuffer.size());
+            m_connectorBuffer.clear();
         }
     }
 
@@ -173,7 +175,8 @@ private:
         printf("onConnectFailed() fd=%d\n", connector.fd());
         state = Socks5State::Error;
         SendErrorReply(0x04);  // Host unreachable
-        acceptor.close();
+        acceptor.close(true);
+       // connector.close(true);
     }
 
     void OnConnectorClose() {
@@ -191,11 +194,20 @@ private:
     }
 
     void OnAcceptorReceiveData(const uint8_t* data, size_t length) {
-        // Append to buffer to handle fragments
-        clientBuffer.insert(clientBuffer.end(), data, data + length);
 
+
+
+        // Append to buffer to handle fragments
+        m_clientBuffer.insert(m_clientBuffer.end(), data, data + length);
+/*
+        std::cout << "OnAcceptorReceiveData() Buffer (as numbers): ";
+        for (uint8_t byte : m_clientBuffer) {
+            std::cout << static_cast<unsigned int>(byte) << " ";
+        }
+        std::cout << std::endl;
+*/
         // Process based on state (state machine for fragmentation)
-        while (!clientBuffer.empty()) {
+        while (!m_clientBuffer.empty()) {
             if (state == Socks5State::Greeting) {
                 if (!ProcessGreeting())
                     break;
@@ -252,34 +264,43 @@ private:
     }
 
     bool ProcessGreeting() {
-        if (clientBuffer.size() < 3)
+        /*
+        std::cout << "ProcessGreeting() Buffer (as numbers): ";
+        for (uint8_t byte : m_clientBuffer) {
+            std::cout << static_cast<unsigned int>(byte) << " ";
+        }
+        std::cout << std::endl;
+        */
+
+        if (m_clientBuffer.size() < 3)
             return false;  // Min: VER + NMETHODS + at least 1 method
 
-        if (clientBuffer[0] != 0x05) {
+        if (m_clientBuffer[0] != 0x05) {
             state = Socks5State::Error;
             SendErrorReply(0xFF);  // No acceptable methods
             acceptor.close();
             return false;
         }
 
-        uint8_t nmethods = clientBuffer[1];
-        if (clientBuffer.size() < 2 + nmethods)
+        uint8_t nmethods = m_clientBuffer[1];
+        if (m_clientBuffer.size() < 2 + nmethods)
             return false;  // Wait for full methods
 
         // Check if no-auth (0x00) is supported
         supportsNoAuth = false;
         for (size_t i = 0; i < nmethods; ++i) {
-            if (clientBuffer[2 + i] == 0x00) {
+            if (m_clientBuffer[2 + i] == 0x00) {
                 supportsNoAuth = true;
                 break;
             }
         }
 
         // Consume the greeting
-        clientBuffer.erase(clientBuffer.begin(), clientBuffer.begin() + 2 + nmethods);
+        m_clientBuffer.erase(m_clientBuffer.begin(), m_clientBuffer.begin() + 2 + nmethods);
 
         // Send method selection
-        uint8_t response[2] = {0x05, supportsNoAuth ? 0x00 : 0xFF};
+        uint8_t response[2] = {0x05, static_cast<uint8_t>(supportsNoAuth ? 0x00 : 0xFF)};
+        //uint8_t response[2] = {0x05, supportsNoAuth ? 0x00 : 0xFF};
         acceptor.send(response, 2);
 
         if (!supportsNoAuth) {
@@ -293,16 +314,25 @@ private:
     }
 
     bool ProcessRequest() {
-        if (clientBuffer.size() < 4) return false;  // Min: VER + CMD + RSV + ATYP
+        /*
+        std::cout << "ProcessRequest() Buffer (as numbers): ";
+        for (uint8_t byte : m_clientBuffer) {
+            std::cout << static_cast<unsigned int>(byte) << " ";
+        }
+        std::cout << std::endl;
+        */
 
-        if (clientBuffer[0] != 0x05) {
+        if (m_clientBuffer.size() < 4)
+            return false;  // Min: VER + CMD + RSV + ATYP
+
+        if (m_clientBuffer[0] != 0x05) {
             state = Socks5State::Error;
             SendErrorReply(0x01);  // General failure
             acceptor.close();
             return false;
         }
 
-        uint8_t cmd = clientBuffer[1];
+        uint8_t cmd = m_clientBuffer[1];
         if (cmd != 0x01) {  // Only support CONNECT
             state = Socks5State::Error;
             SendErrorReply(0x07);  // Command not supported
@@ -310,12 +340,12 @@ private:
             return false;
         }
 
-        uint8_t atyp = clientBuffer[3];
+        uint8_t atyp = m_clientBuffer[3];
         size_t addrLen = 0;
         if (atyp == 0x01) addrLen = 4;  // IPv4
         else if (atyp == 0x03) {  // Domain
-            if (clientBuffer.size() < 5) return false;
-            addrLen = clientBuffer[4] + 1;  // Len byte + domain
+            if (m_clientBuffer.size() < 5) return false;
+            addrLen = m_clientBuffer[4] + 1;  // Len byte + domain
         } else if (atyp == 0x04) addrLen = 16;  // IPv6
         else {
             state = Socks5State::Error;
@@ -325,7 +355,7 @@ private:
         }
 
         size_t totalLen = 4 + addrLen + 2;  // + port
-        if (clientBuffer.size() < totalLen) return false;  // Wait for full request
+        if (m_clientBuffer.size() < totalLen) return false;  // Wait for full request
 
         // Extract address and port
         std::string host;
@@ -334,31 +364,31 @@ private:
 
         if (atyp == 0x01) {  // IPv4
             char ipStr[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, clientBuffer.data() + offset, ipStr, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, m_clientBuffer.data() + offset, ipStr, INET_ADDRSTRLEN);
             host = ipStr;
             offset += 4;
         } else if (atyp == 0x03) {  // Domain
-            uint8_t domainLen = clientBuffer[offset];
+            uint8_t domainLen = m_clientBuffer[offset];
             offset++;
-            host.assign(reinterpret_cast<const char*>(clientBuffer.data() + offset), domainLen);
+            host.assign(reinterpret_cast<const char*>(m_clientBuffer.data() + offset), domainLen);
             offset += domainLen;
         } else if (atyp == 0x04) {  // IPv6
             char ipStr[INET6_ADDRSTRLEN];
-            inet_ntop(AF_INET6, clientBuffer.data() + offset, ipStr, INET6_ADDRSTRLEN);
+            inet_ntop(AF_INET6, m_clientBuffer.data() + offset, ipStr, INET6_ADDRSTRLEN);
             host = ipStr;
             offset += 16;
         }
 
-        port = (clientBuffer[offset] << 8) | clientBuffer[offset + 1];
+        port = (m_clientBuffer[offset] << 8) | m_clientBuffer[offset + 1];
 
         // Consume the request
-        clientBuffer.erase(clientBuffer.begin(), clientBuffer.begin() + totalLen);
+        m_clientBuffer.erase(m_clientBuffer.begin(), m_clientBuffer.begin() + totalLen);
 
         // Connect to target
         if (!connector.connectTo(host.c_str(), port)) {
             state = Socks5State::Error;
             SendErrorReply(0x01);  // General failure
-            acceptor.close();
+            acceptor.close(true);
             return false;
         }
 
@@ -369,12 +399,12 @@ private:
     void ForwardToConnector() {
         if (connector.getStatus() == TCPSocket::Connected && state == Socks5State::Connected) {
             //printf("connector::send length[%zu]\n", clientBuffer.size());
-            connector.send(clientBuffer.data(), clientBuffer.size()); //inja bayad pause rresume anjam beshe
+            connector.send(m_clientBuffer.data(), m_clientBuffer.size()); //inja bayad pause rresume anjam beshe
         } else {
             // Buffer if not connected yet
-            connectorBuffer.insert(connectorBuffer.end(), clientBuffer.begin(), clientBuffer.end());
+            m_connectorBuffer.insert(m_connectorBuffer.end(), m_clientBuffer.begin(), m_clientBuffer.end());
         }
-        clientBuffer.clear();
+        m_clientBuffer.clear();
     }
 
     void SendErrorReply(uint8_t errorCode) {
