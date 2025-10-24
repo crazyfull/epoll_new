@@ -25,6 +25,7 @@ SOURCES += \
         clsBufferPool.cpp \
         clsDNSLookup.cpp \
         clsEpollReactor.cpp \
+        clsIntrusiveList.cpp \
         clsSendQueue.cpp \
         clsServer.cpp \
         clsSocketList.cpp \
@@ -40,6 +41,7 @@ HEADERS += \
     clsBufferPool.h \
     clsDNSLookup.h \
     clsEpollReactor.h \
+    clsIntrusiveList.h \
     clsSendQueue.h \
     clsServer.h \
     clsGCList.h \

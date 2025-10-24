@@ -15,7 +15,7 @@ constexpr unsigned int DNS_MAX_RETRIES = 3;
 
 
 //buffer config
-static constexpr size_t BUFFER_POOL_SIZE = 10 * (1024*1024);    //100 MG
+static constexpr size_t BUFFER_POOL_SIZE = 100 * (1024*1024);    //100 MG
 static constexpr size_t BACK_PRESSURE = 128*1024;               //1*(1024*1024); //1 MG
 static constexpr size_t SLAB_SIZE = 8 * 1024;                   // 8KB socket buffer
 //static constexpr size_t HIGH_WATERMARK = 64 * 1024;
@@ -26,8 +26,9 @@ static constexpr size_t LOW_WATERMARK = 64 * 1024;
 constexpr int UPDATE_CACHED_NOW      = 1000;
 constexpr int DNS_TIMEOUT_INTERVAL_MS      = 200;
 constexpr int GARBAGE_COLLECTOR_INTERVAL_MS = 10*1000;  // 10 seconds
-constexpr int IDLE_CONNECTION_INTERVAL_MS = 30*1000;     // 30 seconds
-constexpr int STALLED_CONNECTION_INTERVAL_MS = 10*1000;   // 10 seconds
+constexpr int IDLE_CONNECTION_INTERVAL_MS = 30*1000;    // 30 seconds
+constexpr int CLOSE_WAIT_INTERVAL_MS = 10*1000;          // 10 seconds
+constexpr int CLOSING_TIMEOUT_SECS = 60;                // 60 seconds
 
 
 #endif // CONSTANTS_H

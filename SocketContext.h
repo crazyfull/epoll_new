@@ -2,6 +2,7 @@
 #define SOCKETCONTEXT_H
 // ============================== SocketContext (low-level) ====================
 // Owns fd, rw buffers, and queue; used via composition by high-level handlers.
+#include "clsIntrusiveList.h"
 #include "clsSendQueue.h"
 #include <cstdint>
 #include <cstdio>

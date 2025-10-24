@@ -87,6 +87,7 @@ public:
     // accessors
     int fd() const;
     TCPSocket *getPointer();
+    uint64_t getLastActiveTime();
     //void setSocketContext(TCPConnectionHandle &c);
 
     bool adoptFd(int fd);

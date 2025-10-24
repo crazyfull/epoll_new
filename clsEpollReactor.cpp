@@ -66,12 +66,12 @@ void EpollReactor::init()
     m_pTimers->addTimer(IDLE_CONNECTION_INTERVAL_MS, [this] () {
         maintenance();
     });
-
-    //Managing STALLED Connections
-    m_pTimers->addTimer(STALLED_CONNECTION_INTERVAL_MS, [this] () {
+*/
+    //Managing closing stalled Connections
+    m_pTimers->addTimer(CLOSE_WAIT_INTERVAL_MS, [this] () {
         maintenance();
     });
-    */
+
 
     //update now time
     m_pTimers->addTimer(UPDATE_CACHED_NOW, [this] {
@@ -267,42 +267,13 @@ bool EpollReactor::register_fd(int fd, epoll_event *pEvent,SockTypes sockType, v
     if(!pEvent)
         return false;
 
-    SockInfo* sockinfo = m_pConnectionList->add(fd, sockType);
+
+    SockInfo* sockinfo = m_pConnectionList->add(fd, sockType, ptr);
     if (!sockinfo) {
 
         printf("can not add new connection to ConnectionList\n");
         return false;
     }
-
-    /*
-     *  in bakhsh tavasole khode socket bayad handle beshe
-    //::close(fd);
-    if (sockType == IS_TCP_SOCKET) {
-        TCPSocket *pTCPSocket = static_cast<TCPSocket*>(ptr);
-        if(pTCPSocket)
-            delete pTCPSocket;
-    }
-
-    if (sockType == IS_UDP_SOCKET) {
-        UDPSocket *pUDPSocket = static_cast<UDPSocket*>(ptr);
-        if(pUDPSocket)
-            delete pUDPSocket;
-    }
-
-    if (sockType == IS_TIMER_SOCKET) {
-
-        /* lazem nist khode timer tavasote user delete bayad beshe
-            Timer *pTimer = static_cast<Timer*>(ptr);
-            if(pTimer)
-                delete pTimer;
-            * /
-    }
-    */
-
-
-
-    if(ptr)
-        sockinfo->socketBasePtr = ptr;
 
     if(pEvent->events == 0){
         pEvent->events = EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING;  //EPOLLOUT
@@ -569,45 +540,85 @@ void EpollReactor::wake() {
 void EpollReactor::maintenance()
 {
 
+    /* mohem*/
+    auto now = getCachedNow();
+    std::vector<SockInfo*> socketsToClose;
 
-    /* mohem
-    auto now = std::chrono::steady_clock::now();
-    m_pConnectionList->for_each([&](SockInfo* sockInfo) {
-        if (sockInfo->type == IS_TCP_SOCKET) {
-            TCPSocket* sock = static_cast<TCPSocket*>(sockInfo->socketBasePtr);
-            if (sock->getStatus() == TCPSocket::Closing) {
-                auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-                                    now - sock->getSocketContext()->lastActive).count();
-                if (duration > 30) {  // Timeout 30 ثانیه
-                    printf("Timeout for Closing socket: fd=%d\n", sock->fd());
-                    sock->close(true);  // Force close
-                    m_GCList.retire(sock);
-                }
+    m_pConnectionList->forEachActive([&](SockInfo* pSocketInfo) {
+
+        if (pSocketInfo->type == IS_NOT_SET)
+            return;
+
+        TCPSocket* pCSock = nullptr;
+        // faghat socket haiy ke momkene
+        if (pSocketInfo->type == IS_TCP_SOCKET || pSocketInfo->type == IS_UDP_SOCKET)
+        {
+            pCSock = static_cast<TCPSocket*>(pSocketInfo->socketBasePtr);
+        }
+
+        if (!pCSock)
+            return;
+
+        // check timeout
+        auto duration = now - pCSock->getLastActiveTime();
+        if (pCSock->getStatus() == TCPSocket::Closing)
+        {
+            if (duration >= CLOSING_TIMEOUT_SECS) {
+                printf("Closing Timeout: fd=%d\n", pSocketInfo->fd);
+
+                // add to list for close
+                socketsToClose.push_back(pSocketInfo);
+            }
+        }
+        else if (pCSock->getStatus() == TCPSocket::Connected)
+        {
+            //movaghat
+            if (duration >= 60) {
+                printf("Idle Timeout: fd=%d\n", pSocketInfo->fd);
+                // add to list for close
+                socketsToClose.push_back(pSocketInfo);
+                //pCSock->close(true); //unsafe
             }
         }
     });
-*/
 
-    // (13) idle cull
-    /*
-    std::vector<int> to_close;
-    auto now = std::chrono::steady_clock::now();
 
-    for(auto &kv: m_ConnectionMap) {
-        auto &c = kv.second->m_SocketContext;
-        auto idle = std::chrono::duration_cast<std::chrono::seconds> (now - c->lastActive).count();
-        if(idle > IDLE_TIMEOUT_SEC)
-            to_close.push_back(kv.first);
+    //close
+    for (SockInfo* pInfo : socketsToClose) {
+        //
+        TCPSocket* pCSock = static_cast<TCPSocket*>(pInfo->socketBasePtr);
+        if (pCSock) {
+            pCSock->close(true); //safe close
+        }
     }
 
-    for(int fd: to_close){
-        close_fd(fd);
+    printf("maintenance() Active socket count: %d\n", m_pConnectionList->count());
+
+    /* peymayesh ro socket list ke behine nist
+    std::vector<SockInfo*> *pConnectionListSockets = m_pConnectionList->list();
+    for (SockInfo* sockInfo : *pConnectionListSockets)
+    {
+        if (sockInfo && sockInfo->type == IS_TCP_SOCKET && sockInfo->fd != -1)
+        {
+            TCPSocket* sock = static_cast<TCPSocket*>(sockInfo->socketBasePtr);
+            if (!sock || !sock->getSocketContext()) {
+                continue;
+            }
+
+            // --- منطق اصلی تابع maintenance ---
+            if (sock->getStatus() == TCPSocket::Closing)
+            {
+                auto duration = now - sock->getSocketContext()->lastActive;
+                //
+                if (duration >= WAITING_FOR_CLOSE) {
+                    printf("Timeout for Closing socket: fd=%d\n", sock->fd());
+                    sock->close(true);
+                }
+            }
+        }
     }
+    */
 
-*/
-    // printf("maintenance(%zd)\n", (long)time);
-
-    // TODO: اگر idle GC می‌خواهی، از SocketList iterate کن و با lastActive ببند.
 }
 
 void EpollReactor::shutdown_all() {

@@ -27,7 +27,7 @@ void TCPSocket::updateLastActive()
     if(m_pReactor){
         m_SocketContext.lastActive = m_pReactor->getCachedNow(); //std::chrono::steady_clock::now();
 
-        printf("lastActive %lu \n", m_SocketContext.lastActive);
+        //printf("lastActive %lu \n", m_SocketContext.lastActive);
     }
 }
 
@@ -272,6 +272,7 @@ void TCPSocket::close(bool force) {
         // pending برای graceful
         m_pendingClose = true;
         setStatus(Closing);
+        updateLastActive();
         ::shutdown(m_SocketContext.fd, SHUT_WR);  // بستن write، اما fd باز بمونه
         m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);  // برای خالی کردن queue
         printf("pending close: waiting for queue to drain\n");
@@ -321,7 +322,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
         perror("inet_pton failed (IPv4 assumed)");
         setStatus(Closing);
         handleOnConnectFailed();
-        close();
+        close(true);
         return;
     }
 
@@ -335,7 +336,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
         }else{
             setStatus(Closing);
             handleOnConnectFailed();
-            close();
+            close(true);
         }
 
         return;
@@ -360,7 +361,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     perror("connect failed");
     setStatus(Closing);
     handleOnConnectFailed();
-    close();
+    close(true);
 }
 
 void TCPSocket::_accepted(int fd)
@@ -382,7 +383,7 @@ void TCPSocket::_accepted(int fd)
     }
 
     //be har dalili accept nashod close call beshe ke GC emal beshe
-    close();
+    close(true);
 }
 
 void TCPSocket::connect_cb(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p)
@@ -421,6 +422,11 @@ int TCPSocket::fd() const
 TCPSocket *TCPSocket::getPointer()
 {
     return this;
+}
+
+uint64_t TCPSocket::getLastActiveTime()
+{
+    return m_SocketContext.lastActive;
 }
 
 void TCPSocket::setOnData(OnDataFn fn, void* Arg) {
@@ -488,7 +494,7 @@ bool TCPSocket::adoptFd(int fd) {
     //faild allocate
     if (!m_SocketContext.rBuffer)
     {
-        perror("allocate failed!");
+        perror("Error allocate failed: ");
         return false;
     }
 
@@ -530,11 +536,12 @@ void TCPSocket::onReadable()
                     m_pendingClose = true;
                     //change status for shurdown
                     setStatus(Closing);
+                    updateLastActive();
 
                     //faal shodane EPOLLOUT baraye khali kardane safe ersal
                     m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);
                 }else{
-                    close();
+                    close(true);
                 }
             }
             break;
@@ -543,8 +550,8 @@ void TCPSocket::onReadable()
         if(bytesRec < 0) {
             if(errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
-            //printf("bytesRec = -1 close()\n");
-            close();
+
+            close(true);
             break;
         }
     }
@@ -783,25 +790,24 @@ void TCPSocket::onWritable() {
 void TCPSocket::handleHalfClose() {
     char buf[1];
     ssize_t ret = ::recv(m_SocketContext.fd, buf, 1, MSG_PEEK | MSG_DONTWAIT);
-    //printf("handleHalfClose: %zd\n", ret);
     if (ret == 0) {
 
         if (!m_SocketContext.writeQueue->empty()) {
             m_pendingClose = true;
             setStatus(Closing);
+            updateLastActive();
             m_pReactor->addFlags(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
             printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
         } else {
-            //printf("handleHalfClose bytesRec == 0 close()\n");
-            close();
+            //safe ersal khalie force close beshe
+            close(true);
             return;
         }
 
 
     } else if (ret < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
-        printf("handleHalfClose errno\n");
-
-        close();
+        //socker error force close
+        close(true);
         return;
     }
 
@@ -809,7 +815,7 @@ void TCPSocket::handleHalfClose() {
     int err = getErrorCode();
     if (err != 0) {
         printf("Socket error: [%d] msg:[%s]\n", err, strerror(err));
-        close();
+        close(true);
         return;
     }
 }

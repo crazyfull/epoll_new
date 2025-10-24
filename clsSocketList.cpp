@@ -10,7 +10,7 @@ uint32_t SocketList::genIDCounter() const
 
 uint32_t SocketList::count() const
 {
-    return m_count;
+    return m_activeConnectionList.size();
 }
 
 
@@ -28,7 +28,16 @@ uint32_t SocketList::maximumSize() const
     return m_list.size();
 }
 
-SocketList::SocketList(int MaxFD):m_list(MaxFD, nullptr), m_count(0) {
+std::vector<SockInfo *> *SocketList::list()
+{
+    return &m_list;
+}
+
+void SocketList::forEachActive(std::function<void (SockInfo *)> callback) {
+    m_activeConnectionList.for_each(callback);
+}
+
+SocketList::SocketList(int MaxFD):m_list(MaxFD, nullptr) {
 
     //init preallocate
     for (int i = 0; i < MaxFD; i++) {
@@ -43,23 +52,30 @@ SocketList::~SocketList()
     }
 }
 
-SockInfo *SocketList::add(int fd, SockTypes sockType) {
+SockInfo *SocketList::add(int fd, SockTypes sockType, void* ptr) {
     if (fd <= 0 || fd >= (int)m_list.size()){
         return nullptr;
     }
 
-    auto clientSocket = m_list[fd];
-    clientSocket->fd = fd;
-    clientSocket->type = sockType;
+    SockInfo *pSocketInfo = m_list[fd];
+    pSocketInfo->fd = fd;
+    pSocketInfo->type = sockType;
+    if(ptr)
+        pSocketInfo->socketBasePtr = ptr;
 
-    //m_GenIDList[fd]++;
-    m_count++;
+
+    //
+    //m_count++;
     m_genIDCounter++;
     if(m_genIDCounter == 0)
         m_genIDCounter = 1;
 
-    clientSocket->genID = m_genIDCounter;   //m_GenIDList[fd];
-    return clientSocket;
+    pSocketInfo->genID = m_genIDCounter;   //m_GenIDList[fd];
+
+    //add client to TCP active list
+    m_activeConnectionList.push_back(pSocketInfo);
+
+    return pSocketInfo;
 }
 
 SockInfo *SocketList::get(int fd, uint32_t sockgenId) {
@@ -83,12 +99,15 @@ void SocketList::remove(int fd) {
     if (fd < 0 || fd >= (int)m_list.size())
         return;
 
-    auto clientSocket = m_list[fd];
-    if (clientSocket) {
-        clientSocket->fd = -1;
-        m_count--;
+    SockInfo* pSocketInfo = m_list[fd];
+    if (pSocketInfo) {
+        //remove from active list
+        m_activeConnectionList.remove(pSocketInfo);
 
-        if(clientSocket->socketBasePtr){
+        pSocketInfo->fd = -1;
+        //m_count--;
+
+        if(pSocketInfo->socketBasePtr){
             //printf("SocketList::remove: [%d]\n\n", fd);
 
             /*
@@ -98,8 +117,8 @@ void SocketList::remove(int fd) {
             */
         }
 
-        clientSocket->genID = ++m_genIDCounter;
-        clientSocket->type = IS_NOT_SET;
+        pSocketInfo->genID = ++m_genIDCounter;
+        pSocketInfo->type = IS_NOT_SET;
         m_genIDCounter++;
     }
 }
