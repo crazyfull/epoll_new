@@ -22,6 +22,15 @@ void TCPSocket::setStatus(socketStatus newStatus)
         status = newStatus;
 }
 
+void TCPSocket::updateLastActive()
+{
+    if(m_pReactor){
+        m_SocketContext.lastActive = m_pReactor->getCachedNow(); //std::chrono::steady_clock::now();
+
+        printf("lastActive %lu \n", m_SocketContext.lastActive);
+    }
+}
+
 EpollReactor *TCPSocket::getReactor() const
 {
     return m_pReactor;
@@ -229,7 +238,7 @@ void TCPSocket::close(bool force) {
         return;
 
     if (m_SocketContext.writeQueue->empty() || force == true) {
-        printf("TCPSocket::close !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %d \n", fd());
+        //printf("TCPSocket::close !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %d \n", fd());
         //
 
         setStatus(Closed);
@@ -474,7 +483,7 @@ bool TCPSocket::adoptFd(int fd) {
     m_SocketContext.rBuffer = (char*)m_pReactor->bufferPool()->allocate(SLAB_SIZE);  //(char*)::malloc(SLAB_SIZE);
     m_SocketContext.rBufferCapacity = SLAB_SIZE;
     m_SocketContext.rBufferLength = 0;
-    m_SocketContext.lastActive = std::chrono::steady_clock::now();
+    updateLastActive();
 
     //faild allocate
     if (!m_SocketContext.rBuffer)
@@ -501,7 +510,7 @@ void TCPSocket::onReadable()
 
             m_SocketContext.rBufferLength += (size_t) bytesRec;
             //m_SocketContext.rBuffer[m_SocketContext.rBufferLength] = 0;
-            m_SocketContext.lastActive = std::chrono::steady_clock::now();
+            updateLastActive();
             handleOnData(reinterpret_cast<uint8_t*>(m_SocketContext.rBuffer), m_SocketContext.rBufferLength);  // hot-path via fn pointer
             m_SocketContext.rBufferLength = 0; // app consumed in this skeleton
 
@@ -551,9 +560,11 @@ void TCPSocket::send(const void* data, size_t len) {
     while (len > 0 && m_SocketContext.writeQueue->empty()) {
         ssize_t n = ::send(m_SocketContext.fd, data, len, MSG_NOSIGNAL | MSG_DONTWAIT);
         if (n > 0) {
+
             sndBytes += n;
             data = (const char*)data + n;
             len -= (size_t)n;
+            updateLastActive();
             if (len == 0)
                 return; // hame ersal shod
             break;
@@ -676,6 +687,7 @@ void TCPSocket::onWritable() {
         printf("bytesSent: %zd\n", bytesSent);
         if (bytesSent > 0) {
             sndBytes += bytesSent;
+            updateLastActive();
             size_t remaining = static_cast<size_t>(bytesSent);
 
             // مصرف از queue
@@ -706,8 +718,8 @@ void TCPSocket::onWritable() {
                 continue;
 
             } else {
-                perror("sendmsg");
-                close();
+                perror("error sendmsg");
+                close(true);
                 return;
             }
         }

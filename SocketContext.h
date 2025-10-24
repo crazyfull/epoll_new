@@ -17,7 +17,7 @@ struct SocketContext
     size_t rBufferCapacity { 0 };
     size_t rBufferLength { 0 };
     SendQueue* writeQueue {nullptr};
-    std::chrono::steady_clock::time_point lastActive {};
+    uint64_t lastActive {};
 
     ~SocketContext(){
         //printf("~SocketContext(---------------------------------------------------------------)\n");

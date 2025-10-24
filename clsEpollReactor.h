@@ -39,8 +39,11 @@ public:
     void setUseGarbageCollector(bool newUseGarbageCollector);
     bool getIPbyName(const char *hostname, DNSLookup::callback_t callback, void *p, DNSLookup::QUERY_TYPE QuryType = DNSLookup::A);
     void deleteLater(TCPSocket* pSockBase);
+    void updateCashedTime();
 
     BufferPool *bufferPool();
+
+    uint64_t getCachedNow() const;
 
 private:
     bool m_useGarbageCollector {true};
@@ -49,7 +52,7 @@ private:
     int m_wakeupFd {-1};    //baraye exit safe epoll
     int m_maxEvent {100};
     int m_maxConnection {100};
-
+    timespec m_cached_now;
     TimerManager *m_pTimers;
 
     std::vector<int> m_listenerList;

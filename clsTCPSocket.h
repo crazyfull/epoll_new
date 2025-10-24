@@ -137,6 +137,7 @@ private:
 
 
 
+    void updateLastActive();
 
     //CloseCallback close_cb_{};
     //EpollModCallback epoll_mod_cb_{};

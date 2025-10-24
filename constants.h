@@ -23,6 +23,7 @@ static constexpr size_t LOW_WATERMARK = 64 * 1024;
 
 
 // Timer Intervals (in milliseconds)
+constexpr int UPDATE_CACHED_NOW      = 1000;
 constexpr int DNS_TIMEOUT_INTERVAL_MS      = 200;
 constexpr int GARBAGE_COLLECTOR_INTERVAL_MS = 10*1000;  // 10 seconds
 constexpr int IDLE_CONNECTION_INTERVAL_MS = 30*1000;     // 30 seconds

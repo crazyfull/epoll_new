@@ -61,6 +61,7 @@ void EpollReactor::init()
     m_pTimers = new TimerManager;
     m_pTimers->setReactor(this);
 
+    /*
     //Managing IDLE Connections
     m_pTimers->addTimer(IDLE_CONNECTION_INTERVAL_MS, [this] () {
         maintenance();
@@ -70,6 +71,13 @@ void EpollReactor::init()
     m_pTimers->addTimer(STALLED_CONNECTION_INTERVAL_MS, [this] () {
         maintenance();
     });
+    */
+
+    //update now time
+    m_pTimers->addTimer(UPDATE_CACHED_NOW, [this] {
+        this->updateCashedTime();
+    });
+
 
     //DNS timeout timer
     m_pTimers->addTimer(DNS_TIMEOUT_INTERVAL_MS, [this] {
@@ -326,10 +334,20 @@ void EpollReactor::deleteLater(TCPSocket *pSockBase)
         m_GCList.retire(pSockBase);
 }
 
+void EpollReactor::updateCashedTime()
+{
+    clock_gettime(CLOCK_MONOTONIC_RAW, &m_cached_now);
+}
+
 
 BufferPool *EpollReactor::bufferPool()
 {
     return &m_bufferPool;
+}
+
+uint64_t EpollReactor::getCachedNow() const
+{
+    return m_cached_now.tv_sec;
 }
 
 

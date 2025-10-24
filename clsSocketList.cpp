@@ -8,19 +8,27 @@ uint32_t SocketList::genIDCounter() const
     return m_genIDCounter;
 }
 
-int SocketList::count()
+uint32_t SocketList::count() const
 {
+    return m_count;
+}
+
+
+uint32_t SocketList::maximumSize() const
+{
+    /*
     int ret = 0;
     for (int i = 0; i < (int)m_list.size(); i++) {
         if(m_list[i]->fd > 0){
             ret++;
         }
     }
+*/
 
-    return ret;
+    return m_list.size();
 }
 
-SocketList::SocketList(int MaxFD):m_list(MaxFD, nullptr) {  //, m_GenIDList(MaxFD, 0)
+SocketList::SocketList(int MaxFD):m_list(MaxFD, nullptr), m_count(0) {
 
     //init preallocate
     for (int i = 0; i < MaxFD; i++) {
@@ -45,6 +53,7 @@ SockInfo *SocketList::add(int fd, SockTypes sockType) {
     clientSocket->type = sockType;
 
     //m_GenIDList[fd]++;
+    m_count++;
     m_genIDCounter++;
     if(m_genIDCounter == 0)
         m_genIDCounter = 1;
@@ -77,6 +86,8 @@ void SocketList::remove(int fd) {
     auto clientSocket = m_list[fd];
     if (clientSocket) {
         clientSocket->fd = -1;
+        m_count--;
+
         if(clientSocket->socketBasePtr){
             //printf("SocketList::remove: [%d]\n\n", fd);
 
@@ -85,7 +96,6 @@ void SocketList::remove(int fd) {
             clientSocket->socketBasePtr = nullptr;
             delete p;
             */
-
         }
 
         clientSocket->genID = ++m_genIDCounter;

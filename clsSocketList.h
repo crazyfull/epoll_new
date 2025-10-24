@@ -27,6 +27,7 @@ class SocketList
 private:
     std::vector<SockInfo*> m_list;
     uint32_t m_genIDCounter{0};
+    uint32_t m_count;
 
 public:
     SocketList(int MaxFD);
@@ -40,7 +41,8 @@ public:
     // remove connection
     void remove(int fd);
     uint32_t genIDCounter() const;
-    int count();
+    uint32_t count() const;
+    uint32_t maximumSize() const;
 };
 
 #endif // CLSSOCKETLIST_H
