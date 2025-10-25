@@ -30,5 +30,12 @@ constexpr int IDLE_CONNECTION_INTERVAL_MS = 30*1000;    // 30 seconds
 constexpr int CLOSE_WAIT_INTERVAL_MS = 10*1000;          // 10 seconds
 constexpr int CLOSING_TIMEOUT_SECS = 60;                // 60 seconds
 
+// Keep-Alive socket
+//
+constexpr int KEEPIDLE_SECS = 240;   // 4 min delay baraye shoro keep laive
+constexpr int KEEPINTVL_SECS = 30;   // 30 sanie fasle beyne ersale har Probe
+constexpr int KEEPCNT_MAX = 4;       // maximum 4 ersal
+
+//KEEPIDLE_SECS + (KEEPCNT_MAX * KEEPINTVL_SECS) = 6 min
 
 #endif // CONSTANTS_H

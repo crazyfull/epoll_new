@@ -128,7 +128,7 @@ void EpollReactor::removeFlags(SocketContext *pContext, uint32_t flags)
     if (pContext->ev.events & flags) {
         pContext->ev.events &= ~flags;
 
-        printf("mod_remove() flags: %d\n", flags);
+        //printf("mod_remove() flags: %d\n", flags);
 
         if(epoll_ctl(m_epollSocket, EPOLL_CTL_MOD, pContext->fd, &pContext->ev) == -1){
             perror("EPOLL_CTL_MOD mod_remove");
@@ -241,9 +241,11 @@ void EpollReactor::adoptAccepted(int m_fd) {
             break;
         }
 
+        //set socket options
         TCPSocket::setSocketShared(fd, true);
         TCPSocket::setSocketResourceAddress(fd, true);
         TCPSocket::setSocketNoDelay(fd, true);
+        TCPSocket::setSocketKeepAlive(fd, true);
 
         TCPSocket *pSocketbase = nullptr;
         if (m_onAcceptCallback) {
@@ -572,13 +574,15 @@ void EpollReactor::maintenance()
         }
         else if (pCSock->getStatus() == TCPSocket::Connected)
         {
-            //movaghat
+            /*
+            //close IDLE connections
             if (duration >= 60) {
                 printf("Idle Timeout: fd=%d\n", pSocketInfo->fd);
                 // add to list for close
                 socketsToClose.push_back(pSocketInfo);
                 //pCSock->close(true); //unsafe
             }
+            */
         }
     });
 

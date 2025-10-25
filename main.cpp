@@ -38,7 +38,7 @@ int main()
     getrlimit(RLIMIT_NOFILE, &r);
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
-    Server srv(maxfd, 2);
+    Server srv(maxfd, 1);
 
 
     srv.setUseGarbageCollector(false);

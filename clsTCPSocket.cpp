@@ -79,14 +79,41 @@ void TCPSocket::setSocketCork(int fd, bool isEnable)
     setSocketOption(fd, TCP_CORK, isEnable);
 }
 
-void TCPSocket::setSocketKeepAlive(int fd, bool isEnable)
-{
-    setSocketOption(fd, SO_KEEPALIVE, isEnable);
+void TCPSocket::setSocketKeepAlive(int fd, bool isEnable) {
+    if (fd < 0) return;
+
+    int optval = isEnable ? 1 : 0;
+    int result;
+
+    // enable/disable Keep-Alive
+    result = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+    if (result < 0) {
+        perror("setsockopt(SO_KEEPALIVE) failed");
+        return;
+    }
+
+    if (isEnable) {
+        result = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &KEEPIDLE_SECS, sizeof(KEEPIDLE_SECS));
+        if (result < 0) {
+            perror("setsockopt(TCP_KEEPIDLE) failed");
+        }
+
+        result = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &KEEPINTVL_SECS, sizeof(KEEPINTVL_SECS));
+        if (result < 0) {
+            perror("setsockopt(TCP_KEEPINTVL) failed");
+        }
+
+        result = setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &KEEPCNT_MAX, sizeof(KEEPCNT_MAX));
+        if (result < 0) {
+            perror("setsockopt(TCP_KEEPCNT) failed");
+        }
+    }
 }
 
+//for Gaming and VOIP
 void TCPSocket::setSocketLowDelay(int fd, bool isEnable)
 {
-    int tos = IPTOS_LOWDELAY;
+    int tos = isEnable ? IPTOS_LOWDELAY : 0;
     setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
 }
 
@@ -309,7 +336,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
     // تنظیم گزینه‌های سوکت
     TCPSocket::setSocketNoDelay(m_SocketContext.fd, true);
     //SocketBase::setSocketLowDelay(m_SocketContext.fd, true);
-    TCPSocket::setSocketKeepAlive(m_SocketContext.fd, true);
+    //TCPSocket::setSocketKeepAlive(m_SocketContext.fd, true);
     TCPSocket::setSocketResourceAddress(m_SocketContext.fd, true);
 
     // آماده‌سازی آدرس
