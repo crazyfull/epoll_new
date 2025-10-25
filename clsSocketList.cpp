@@ -105,7 +105,6 @@ void SocketList::remove(int fd) {
         m_activeConnectionList.remove(pSocketInfo);
 
         pSocketInfo->fd = -1;
-        //m_count--;
 
         if(pSocketInfo->socketBasePtr){
             //printf("SocketList::remove: [%d]\n\n", fd);
