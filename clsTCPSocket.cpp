@@ -374,7 +374,7 @@ void TCPSocket::_connect(const char *hostname, char **ips, size_t count)
         // اتصال در حال انجام (non-blocking)
         if(adoptFd(m_SocketContext.fd)){
             //set events
-            m_SocketContext.ev.events = EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING | EPOLLOUT | EPOLLERR;
+            m_SocketContext.ev.events = EPOLL_EVENTS_TCP_NONBLOCKING | EPOLLOUT | EPOLLERR;
 
             bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TCP_SOCKET, this);
             if(ret){
@@ -402,9 +402,8 @@ void TCPSocket::_accepted(int fd)
     if(ret){
         if(adoptFd(fd)){
 
-            setStatus(TCPSocket::Connected);
+            setStatus(TCPSocket::Connected);    //or accepted
             handleOnAccepted();  // callback
-            //continue;
             return;
         }
     }

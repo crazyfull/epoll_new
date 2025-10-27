@@ -30,7 +30,8 @@
 
 // ============================== Tunables ===============================
                                                  // EPOLLERR
-#define EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING (EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLET) //
+#define EPOLL_EVENTS_TCP_NONBLOCKING (EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLET) //
+#define EPOLL_LISTINER_EVENTS (EPOLLIN | EPOLLRDHUP | EPOLLET) // EPOLLRDHUP | EPOLLET bada ezafe shodan test nashode hanooz
 
 
 #endif // EPOLL_H
