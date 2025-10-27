@@ -155,55 +155,61 @@ bool EpollReactor::add_fd(int fd, epoll_event *pEvent, uint32_t events)
     return true;
 }
 
+
 bool EpollReactor::add_listener(int port)
 {
-    int listen_fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    // Dual-Stack ipv4 and ipv6
+    int listen_fd = ::socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if(listen_fd < 0) {
-        perror("socket");
+        perror("socket(AF_INET6)");
         return false;
     }
 
-    //add to listener list
+    // add to listener list
     m_listenerList.push_back(listen_fd);
 
+    // set non blocking socket
     if(TCPSocket::setSocketNonblocking(listen_fd) == -1) {
         perror("fcntl");
+        ::close(listen_fd);
         return false;
     }
 
+    // enable multi listiner
     TCPSocket::setSocketShared(listen_fd, true);
-    TCPSocket::setSocketResourceAddress(listen_fd, true);
+
+    // disable Nagle, motmaen nistam lazem bashe
     TCPSocket::setSocketNoDelay(listen_fd, true);
 
+    // IPV6_V6ONLY ro 0 mikonim ke dual stack beshe
+    int optval = 0;
+    if (setsockopt(listen_fd, IPPROTO_IPV6, IPV6_V6ONLY, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(IPV6_V6ONLY)");
+        ::close(listen_fd);
+        return false;
+    }
 
-    sockaddr_in a {};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = INADDR_ANY;
-    a.sin_port = htons((uint16_t) port);
+    // IPv4 and IPv6
+    sockaddr_in6 Addrinfo {};
+    Addrinfo.sin6_family = AF_INET6;
+    Addrinfo.sin6_addr = in6addr_any; // moadele INADDR_ANY
+    Addrinfo.sin6_port = htons((uint16_t) port);
 
-    if(bind(listen_fd, (sockaddr*) & a, sizeof a) < 0) {
-        perror("bind");
+    if(bind(listen_fd, (sockaddr*) &Addrinfo, sizeof Addrinfo) < 0) {
+        perror("error bind");
+        ::close(listen_fd);
         return false;
     }
 
     if(::listen(listen_fd, LISTEN_BACKLOG) < 0) {
-        perror("listen");
-        return false;
-    }
-
-    //add listener to connection list
-    /*
-    SockInfo *sockinfo = m_pConnectionList->add(listen_fd, IS_TCP_LISTENER);
-    if(!sockinfo){
-        printf("errpr: can not listen\n");
+        perror("error listen");
         ::close(listen_fd);
         return false;
     }
-    */
 
-    //add listener fd to epoll
+    // add listener fd to epoll
     struct epoll_event listen_ev;
-    listen_ev.events = (EPOLLIN );
+    listen_ev.events = EPOLL_LISTINER_EVENTS;
     bool ret = register_fd(listen_fd, &listen_ev, IS_TCP_LISTENER, nullptr);
     return ret;
 }
@@ -218,7 +224,6 @@ void EpollReactor::stop_listener()
 
     m_listenerList.clear();
 }
-
 
 
 void EpollReactor::adoptAccepted(int m_fd) {
@@ -258,7 +263,9 @@ void EpollReactor::adoptAccepted(int m_fd) {
             continue;
         }
 
+        //set reactor
         pSocketbase->setReactor(this);
+        //adopt in class
         pSocketbase->_accepted(fd);
 
     }
@@ -278,7 +285,7 @@ bool EpollReactor::register_fd(int fd, epoll_event *pEvent,SockTypes sockType, v
     }
 
     if(pEvent->events == 0){
-        pEvent->events = EPOLL_EVENTS_TCP_MULTITHREAD_NONBLOCKING;  //EPOLLOUT
+        pEvent->events = EPOLL_EVENTS_TCP_NONBLOCKING;  //EPOLLOUT
     }
 
     //make key
