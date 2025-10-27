@@ -134,11 +134,6 @@ private:
     void OnAccepted() {
         printf("onAccepted() fd=%d\n", acceptor.fd());
         connector.setReactor(acceptor.getReactor());
-
-        // Example: connect to upstream
-        // connector.connectTo("51.195.150.84", 80);
-        //connector.connectTo("cl.mojz.ir", 443);
-        // connector.connectTo("192.168.1.10", 9000);
     }
 
     void OnAcceptorClose() {
@@ -320,7 +315,7 @@ private:
             std::cout << static_cast<unsigned int>(byte) << " ";
         }
         std::cout << std::endl;
-        */
+*/
 
         if (m_clientBuffer.size() < 4)
             return false;  // Min: VER + CMD + RSV + ATYP
@@ -385,6 +380,7 @@ private:
         m_clientBuffer.erase(m_clientBuffer.begin(), m_clientBuffer.begin() + totalLen);
 
         // Connect to target
+        printf("connectTo: [%s] port: [%d]\n", host.c_str(), port);
         if (!connector.connectTo(host.c_str(), port)) {
             state = Socks5State::Error;
             SendErrorReply(0x01);  // General failure
