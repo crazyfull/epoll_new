@@ -26,6 +26,7 @@ SOURCES += \
         clsDNSLookup.cpp \
         clsEpollReactor.cpp \
         clsIntrusiveList.cpp \
+        clsMultiplexedTunnel.cpp \
         clsSendQueue.cpp \
         clsServer.cpp \
         clsSocketList.cpp \
@@ -33,6 +34,8 @@ SOURCES += \
         clsTCPSocket.cpp \
         clsTimer.cpp \
         clsTimerManager.cpp \
+        example_Tunnel_Server.cpp \
+        example_Tunnel_client.cpp \
         main.cpp \
         tlsf.c
 
@@ -42,6 +45,7 @@ HEADERS += \
     clsDNSLookup.h \
     clsEpollReactor.h \
     clsIntrusiveList.h \
+    clsMultiplexedTunnel.h \
     clsSendQueue.h \
     clsServer.h \
     clsGCList.h \

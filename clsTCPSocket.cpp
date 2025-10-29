@@ -586,8 +586,8 @@ void TCPSocket::onReadable()
 
 
 void TCPSocket::send(const void* data, size_t len) {
-    //printf("TCPSocket::send: fd%d\n", m_SocketContext.fd);
-    if (!data || len == 0)
+    //printf("TCPSocket::getStatus: %d\n", getStatus());
+    if (!data || len == 0 || !m_pReactor)
         return;
 
     while (len > 0 && m_SocketContext.writeQueue->empty()) {

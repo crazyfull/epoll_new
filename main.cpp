@@ -30,7 +30,7 @@ void cbResolve(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_
 
 //DNSLookup dnsLookup(srv.getRoundRobinShard());
 
-int main()
+int main2()
 {
 
     //in to libwrench hast max ro az onja begir
