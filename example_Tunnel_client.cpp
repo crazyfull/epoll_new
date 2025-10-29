@@ -40,7 +40,7 @@ int main() {
     tunnel->setReactor(srv.getRoundRobinShard());  // مثل کد تو
     tunnel->setOnConnected(onClientConnected, tunnel);  // callback برای connect موفق
     usleep(10*1000);
-    if (tunnel->connectTo("51.195.150.84", 6060)) {
+    if (tunnel->connectTo("51.195.150.84", 6060)) { //51.195.150.84  127.0.0.1
         std::cout << "Connecting..." << std::endl;
     } else {
         std::cout << "Connect failed." << std::endl;
@@ -48,19 +48,21 @@ int main() {
 
     /**/
     uint32_t streamId = 1;
-    int i = 0;
+    uint32_t count = 0;
+    getchar();
     for(;;){
-        i++;
-        usleep(1*100);
+        count++;
+        usleep(1*200);
         //getchar();
-        const char* message = "Hello from client!!!!!";
-        tunnel->sendToStream(streamId, (const uint8_t*)message, strlen(message));
-        if(i > 15*1000){
+        //const char* message = "Hello from clientttt!!!!!";
+        std::string message = "Message #" + std::to_string(count) + " from client!";
+        tunnel->sendToStream(streamId, (const uint8_t*)message.c_str(), message.length());
+        if(count > 10*1000){
             break;
         }
     }
 
-    printf("Press enter to stop.\n");
+    printf("Press enter to stop.-------------------------------------------------------------------------------------------------------\n");
     getchar();
     delete tunnel;
     return 0;

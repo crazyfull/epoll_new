@@ -730,7 +730,7 @@ void TCPSocket::onWritable() {
                     remaining -= buf.len;
                     m_SocketContext.writeQueue->pop_front();
 
-                    printf("writeQueue->pop_front(): [%zu] ev[%u]\n", m_SocketContext.writeQueue->size(), m_SocketContext.ev.events);
+                    printf("writeQueue->pop_front(): [%zuKB] remaining[%zuKB]\n", m_SocketContext.writeQueue->size() / 1024, remaining / 1024);
                 } else {
 
                     memmove(buf.data, static_cast<char*>(buf.data) + remaining, buf.len - remaining);
