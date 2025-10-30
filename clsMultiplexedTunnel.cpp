@@ -58,7 +58,8 @@ void MultiplexedTunnel::sendToStream(uint32_t streamId, const uint8_t* data, siz
 
     // Check backpressure (assuming getSocketContext()->writeQueue exists and size() returns size_t)
     if (getSocketContext() && getSocketContext()->writeQueue->size() > BACK_PRESSURE) {
-        pause_reading(); // Assuming this is defined in TCPSocket
+        //pause_reading(); // Assuming this is defined in TCPSocket
+        printf("MultiplexedTunnel::sendToStream neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed paaaause\n");
     }
 }
 

@@ -463,8 +463,8 @@ void TCPSocket::setOnResume(OnResumeFn fn, void* Arg) {
 bool TCPSocket::adoptFd(int fd) {
 
     int sndbuf = 1 * 1024; // 16KB
-    //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
-    //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
+   // setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+   // setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
 
 
     //printf("allocate size: %zu\n", m_pReactor->bufferPool()->size());

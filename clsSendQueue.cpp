@@ -24,26 +24,8 @@ void SendQueue::push(const void *data, size_t len) {
     }
 }
 
-/*
-void SendQueue::push(const void *data, size_t len) {
-    void* buf = m_pool.allocate(len);
-    if(buf){
-        memcpy(buf, data, len);
-        Buffer b;
-        b.data = (char*)buf;
-        b.len = len;
-        b.offset = 0;
-        m_queue.push_back(b);
-        m_len += len;
-    } else {
-        printf("SendQueue::push: can not allocate\n");
-    }
-}
-*/
-
 bool SendQueue::empty() const {
     return m_queue.empty();
-
 }
 
 void SendQueue::pop_front() {
@@ -51,10 +33,8 @@ void SendQueue::pop_front() {
 
         m_len -= m_queue.front().len;
         //printf("SendQueue::pop_front(): [%zu]\n", m_len);
-        m_pool.deallocate(m_queue.front().data);
+        m_pool.deallocate(m_queue.front().data);    //segment fault
         m_queue.pop_front();
-
-        //printf("pop_front\n");
 
     }else{
         printf("pop_front empty\n");
