@@ -218,47 +218,6 @@ int TCPSocket::getErrorCode()
     return err;
 }
 
-/*
-void TCPSocket::close()
-{
-    if (!m_pReactor || m_SocketContext.fd == -1 || getStatus() == Closed)
-        return;
-
-
-    setStatus(Closed);
-
-    //delere from epoll and ConnectionList
-    m_pReactor->del_fd(m_SocketContext.fd, true);
-
-    if(m_SocketContext.rBuffer) {
-        m_pReactor->bufferPool()->deallocate(m_SocketContext.rBuffer);
-        m_SocketContext.rBuffer = nullptr;
-    }
-
-    //check graceful shutdown
-    if(!m_SocketContext.writeQueue->empty()){
-        printf("graceful shutdown!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-    }
-
-    m_SocketContext.writeQueue->clear();
-    ::shutdown(m_SocketContext.fd, SHUT_RDWR);
-    ::close(m_SocketContext.fd);
-
-
-    //writeQueue dar SocketContext free mishe
-
-    printf("close()\n");
-
-    //m_SocketContext.fd = -1;
-    printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
-    this->handleOnClose();
-
-
-
-
-}
-*/
-
 
 void TCPSocket::close(bool force) {
     if (!m_pReactor || m_SocketContext.fd == -1 || getStatus() == Closed)
