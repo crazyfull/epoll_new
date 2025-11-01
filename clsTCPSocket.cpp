@@ -463,8 +463,8 @@ void TCPSocket::setOnResume(OnResumeFn fn, void* Arg) {
 bool TCPSocket::adoptFd(int fd) {
 
     int sndbuf = 1 * 1024; // 16KB
-   // setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
-   // setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
+    //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+    //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
 
 
     //printf("allocate size: %zu\n", m_pReactor->bufferPool()->size());
@@ -572,10 +572,9 @@ void TCPSocket::send(const void* data, size_t len) {
         }
     }
 
+    /*old
     if (len > 0) {
-
         m_SocketContext.writeQueue->push(data, len); // add to Queue list
-
         //printf("m_SocketContext.writeQueue->size()  size=%zu\n", m_SocketContext.writeQueue->size());
 
         if (m_SocketContext.writeQueue->size() > BACK_PRESSURE) {
@@ -584,8 +583,22 @@ void TCPSocket::send(const void* data, size_t len) {
         }else{
             m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);
         }
-
     }
+    */
+
+    /**/
+    if (len > 0) {
+        m_SocketContext.writeQueue->push(data, len); // add to Queue list
+
+        // harvaght ke data too queue hast, EPOLLOUT ro fa'al mikonim.
+        m_pReactor->addFlags(&m_SocketContext, EPOLLOUT);
+
+        if (m_SocketContext.writeQueue->size() > BACK_PRESSURE) {
+            // Backpressure faqhat rooye ghesmat daryaft dadeh (read) ta'sir dare.
+            pause_reading();
+        }
+    }
+
 }
 
 
@@ -621,6 +634,7 @@ void TCPSocket::onWritable() {
         return;
     }
 
+    //dar soorat daryaft socket error dar har soorat connection force close mishe
     if (err != 0) {
         printf("EPOLLERR in onWritable: fd=%d, error=%d\n", fd(), err);
         close(true);
@@ -689,7 +703,7 @@ void TCPSocket::onWritable() {
                     remaining -= buf.len;
                     m_SocketContext.writeQueue->pop_front();
 
-                    printf("writeQueue->pop_front(): [%zuKB] remaining[%zuKB]\n", m_SocketContext.writeQueue->size() / 1024, remaining / 1024);
+                    printf("writeQueue->pop_front(): [%zu] remaining[%zu]\n", m_SocketContext.writeQueue->size() , remaining );
                 } else {
 
                     memmove(buf.data, static_cast<char*>(buf.data) + remaining, buf.len - remaining);
@@ -753,20 +767,17 @@ void TCPSocket::onWritable() {
     //resume
     if (m_SocketContext.writeQueue->size() <= LOW_WATERMARK) {
         printf("kissed LOW_WATERMARK: [%zu]\n", m_SocketContext.writeQueue->size());
-        m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
         resume_reading();
-        return;
     }
 
-    // age safe ersal khali shod flag send hazf beshe
-    // age read az ghabl pause bood resume beshe
+    // vaghti ke saf khali shod EPOLLOUT disable beshe
     if (m_SocketContext.writeQueue->empty()) {
         m_pReactor->removeFlags(&m_SocketContext, EPOLLOUT);
+        // agar Reading az ghabl pause shode bod resume beshe
         if (m_readPaused) {
             printf("Write queue drained, resuming reading.\n");
             resume_reading();
         }
-        return;
     }
 
 }
