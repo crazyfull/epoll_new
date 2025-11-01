@@ -1,6 +1,11 @@
 #include "clsMultiplexedTunnel.h"
-#include "constants.h"
-// #include "constants.h" // فرض می‌شود این فایل شامل تعریف BACK_PRESSURE و ... است
+#include <iostream>
+#include <cmath> // for std::min (though std::min in <algorithm> is better)
+
+// Assume these are provided by TCPSocket/Epoll environment
+// #define BACK_PRESSURE_LIMIT 4 * 1024 * 1024
+
+// --- Public API ---
 
 MultiplexedTunnel::MultiplexedTunnel(bool isClient) : m_isClient(isClient), m_nextStreamId(isClient ? 1 : 2) {
     //
@@ -13,6 +18,13 @@ void MultiplexedTunnel::setOnNewStream(OnNewStreamFn fn, void* arg) {
 
 uint32_t MultiplexedTunnel::openStream(OnStreamDataFn onData, OnStreamCloseFn onClose, void* arg) {
     uint32_t id = m_nextStreamId;
+
+    // Check for stream ID exhaustion (assuming uint32 max is the limit)
+    if (id + 2 < id) {
+        // Stream ID overflow, should send GoAway
+        shutdown(GoAwayCode::InternalError);
+        return 0;
+    }
     m_nextStreamId += 2; // Increment by 2 to keep parity
 
     auto& s = m_streams[id];
@@ -32,12 +44,12 @@ void MultiplexedTunnel::sendToStream(uint32_t streamId, const uint8_t* data, siz
         return;
 
     auto& s = it->second;
-    if (len == 0)
-        return;
+    if (len == 0) return;
 
     // Queue if window low
     if (s.sendWindow == 0) {
         s.pendingData.emplace_back(data, data + len);
+        // printf("MultiplexedTunnel::sendToStream, stream %u blocked. sendWindow: %u\n", streamId, s.sendWindow);
         return;
     }
 
@@ -45,21 +57,23 @@ void MultiplexedTunnel::sendToStream(uint32_t streamId, const uint8_t* data, siz
     size_t pos = 0;
     while (pos < len) {
         uint32_t chunk = std::min<uint32_t>((uint32_t)len - pos, s.sendWindow);
+
         if (chunk == 0) {
-            // Buffer the rest
+            // Buffer the rest (occurs if sendWindow was exactly 0)
             s.pendingData.emplace_back(data + pos, data + len);
             break;
         }
 
+        // Send the chunk
         sendFrame(FrameType::Data, FrameFlags(0), streamId, chunk, data + pos);
         s.sendWindow -= chunk;
         pos += chunk;
     }
 
-    // Check backpressure (assuming getSocketContext()->writeQueue exists and size() returns size_t)
-    if (getSocketContext() && getSocketContext()->writeQueue->size() > BACK_PRESSURE) {
-        //pause_reading(); // Assuming this is defined in TCPSocket
-        printf("MultiplexedTunnel::sendToStream neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed paaaause\n");
+    // Backpressure check (Assuming getSocketContext()->writeQueue exists)
+    if (getSocketContext() && getSocketContext()->writeQueue->size() > BACK_PRESSURE_LIMIT) {
+        // pause_reading(); // Should be done at reactor level if needed
+        // printf("WARNING: Backpressure limit hit. Write queue size: %zu\n", getSocketContext()->writeQueue->size());
     }
 }
 
@@ -72,7 +86,7 @@ void MultiplexedTunnel::closeStream(uint32_t streamId, bool rst) {
     s.localClosed = true;
 
     FrameFlags flags = rst ? FrameFlags::RST : FrameFlags::FIN;
-    sendFrame(FrameType::Data, flags, streamId, 0);
+    sendFrame(FrameType::Data, flags, streamId, 0); // Send FIN or RST
 
     if (s.remoteClosed) {
         if (s.onClose) s.onClose(s.arg, streamId);
@@ -80,93 +94,108 @@ void MultiplexedTunnel::closeStream(uint32_t streamId, bool rst) {
     }
 }
 
-
+// FIX for Yamux: Delta is in Length field, no payload
 void MultiplexedTunnel::sendWindowUpdate(uint32_t streamId, uint32_t delta) {
-    uint8_t payload[4];
-    memcpy(payload, &delta, 4);
-    sendFrame(FrameType::WindowUpdate, FrameFlags(0), streamId, 4, payload);
+    if (streamId == 0 || delta == 0) return;
+    // Yamux uses Length field for Delta value. Payload is null/empty.
+    sendFrame(FrameType::WindowUpdate, FrameFlags(0), streamId, delta, nullptr);
 }
 
-/*
-void MultiplexedTunnel::sendWindowUpdate(uint32_t streamId, uint32_t delta) {
-    // delta باید داخل payload 4 بایتی فرستاده بشه (network byte order)
-    uint32_t be = htonl(delta);
-    sendFrame(FrameType::WindowUpdate, FrameFlags(0), streamId, 4, reinterpret_cast<const uint8_t*>(&be));
+void MultiplexedTunnel::sendPing(bool isACK, uint32_t value) {
+    FrameFlags flags = isACK ? FrameFlags::ACK : FrameFlags(0);
+
+    // Yamux uses Length field for StreamID (which is 0 for Ping/GoAway)
+    // and Ping value is encoded in the 4-byte payload.
+    // However, looking at yamux/const.go (header.Length() being 4 bytes)
+    // and spec.md, the opaque value is sent in the payload.
+
+    uint32_t netValue = htonl(value); // Ensure value is Big-Endian for payload
+
+    // StreamID is 0 for PING
+    sendFrame(FrameType::Ping, flags, 0, 4, reinterpret_cast<const uint8_t*>(&netValue));
 }
-*/
+
 
 void MultiplexedTunnel::shutdown(GoAwayCode code) {
     uint32_t codeVal = static_cast<uint32_t>(code);
-    sendFrame(FrameType::GoAway, FrameFlags(0), 0, codeVal); // StreamID 0 for connection
-    close(false); // Graceful close (Assuming this is defined in TCPSocket)
+    // YAMUX: GoAway uses Length field to specify the error code. StreamID is 0.
+    // The spec.md is contradictory: "Length should be set to one of the following" vs
+    // "GoAway: Length is the code". We follow Go's implementation that sends the code in the length field.
+    // We send a minimal GoAway frame (StreamID 0, Length = code).
+
+    // Go's implementation uses 4-byte payload for code and length=4. Let's follow that:
+    uint32_t netCode = htonl(codeVal);
+    sendFrame(FrameType::GoAway, FrameFlags(0), 0, 4, reinterpret_cast<const uint8_t*>(&netCode));
+
+    // Close all streams locally
+    for (auto& pair : m_streams) {
+        auto& s = pair.second;
+        if (s.onClose) s.onClose(s.arg, s.id);
+    }
+    m_streams.clear();
+
+    // Close the underlying TCP socket
+    close(false);
 }
+
+// --- Frame Encoding/Decoding ---
 
 void MultiplexedTunnel::sendFrame(FrameType type, FrameFlags flags, uint32_t streamId, uint32_t length, const uint8_t* payload) {
     uint8_t header[HEADER_SIZE];
 
-    header[0] = 1; // Version
+    // FIX: Version is 0
+    header[0] = YAMUX_VERSION;
     header[1] = static_cast<uint8_t>(type);
 
-    // FIX: Convert to Network Byte Order (Big-Endian)
+    // Flags (16 bits) - Network Byte Order
     uint16_t flagVal = static_cast<uint16_t>(flags);
     uint16_t netFlags = htons(flagVal);
     memcpy(header + 2, &netFlags, 2);
 
+    // StreamID (32 bits) - Network Byte Order
     uint32_t netStreamId = htonl(streamId);
     memcpy(header + 4, &netStreamId, 4);
 
+    // Length (32 bits) - Network Byte Order
     uint32_t netLength = htonl(length);
     memcpy(header + 8, &netLength, 4);
 
-    // send is an assumed method from TCPSocket to enqueue data for sending
+    // Send header and payload
     send(header, HEADER_SIZE);
     if (length > 0 && payload) send(payload, length);
 }
 
-void MultiplexedTunnel::processPending(uint32_t streamId) {
-    auto it = m_streams.find(streamId);
-    if (it == m_streams.end()) return;
-
-    auto& s = it->second;
-    while (!s.pendingData.empty() && s.sendWindow > 0) {
-        auto& buf = s.pendingData.front();
-        uint32_t chunk = std::min<uint32_t>((uint32_t)buf.size(), s.sendWindow);
-
-        // This is a Data frame, no special flags needed for queued data
-        sendFrame(FrameType::Data, FrameFlags(0), streamId, chunk, buf.data());
-        s.sendWindow -= chunk;
-
-        if (chunk < buf.size()) {
-            buf.erase(buf.begin(), buf.begin() + chunk);
-            break;
-        }
-        s.pendingData.pop_front();
-    }
-}
-
 void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
-    // Append to parse buffer if partial
     m_parseBuffer.insert(m_parseBuffer.end(), data, data + len);
     size_t pos = 0;
+
     while (pos + HEADER_SIZE <= m_parseBuffer.size()) {
         uint8_t ver = m_parseBuffer[pos++];
-        if (ver != 1) { shutdown(GoAwayCode::ProtocolError); return; }
+        if (ver != YAMUX_VERSION) {
+            // printf("Protocol Error: Invalid Version %u\n", ver);
+            shutdown(GoAwayCode::ProtocolError);
+            pos -= HEADER_SIZE; // Revert pos to prevent buffer overflow issue
+            break;
+        }
 
         auto type = static_cast<FrameType>(m_parseBuffer[pos++]);
 
-        // FIX: Read and Convert from Network Byte Order
+        // Flags (16 bits) - Host Byte Order
         uint16_t netFlags;
         memcpy(&netFlags, m_parseBuffer.data() + pos, 2); pos += 2;
         uint16_t flags = ntohs(netFlags);
 
+        // StreamID (32 bits) - Host Byte Order
         uint32_t netStreamId;
         memcpy(&netStreamId, m_parseBuffer.data() + pos, 4); pos += 4;
         uint32_t streamId = ntohl(netStreamId);
 
+        // Length/Delta (32 bits) - Host Byte Order
         uint32_t netLength;
         memcpy(&netLength, m_parseBuffer.data() + pos, 4); pos += 4;
         uint32_t length = ntohl(netLength);
 
+        // Check if full payload is available
         if (pos + length > m_parseBuffer.size()) {
             pos -= HEADER_SIZE; // Rollback
             break; // Partial data
@@ -180,109 +209,92 @@ void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
             handleDataFrame(streamId, payload, length, flags);
             break;
         case FrameType::WindowUpdate:
-            // length is delta for WindowUpdate
+            // YAMUX: length is delta
             handleWindowUpdateFrame(streamId, payload, length);
             break;
         case FrameType::Ping:
-            // length is opaque value for Ping
-            handlePingFrame(payload, length, static_cast<FrameFlags>(flags));
+            // YAMUX: length is 4, payload is value
+            handlePingFrame(streamId, payload, length, flags);
             break;
         case FrameType::GoAway:
-            // length is code for GoAway
+            // YAMUX: length is 4, payload is code
             handleGoAwayFrame(payload, length);
             break;
+        default:
+            // printf("Protocol Error: Invalid Frame Type %u\n", (uint32_t)type);
+            shutdown(GoAwayCode::ProtocolError);
+            // Do not return here, continue to consume buffer
         }
     }
 
-    // Remove processed, keep leftover
     if (pos > 0) m_parseBuffer.erase(m_parseBuffer.begin(), m_parseBuffer.begin() + pos);
 }
 
+// --- Frame Handlers ---
+
 void MultiplexedTunnel::handleDataFrame(uint32_t streamId, const uint8_t* payload, uint32_t length, uint16_t flags) {
-    // printf("handleDataFrame flags: [%d] streamId: [%d] payload: [%s]\n", flags, streamId, payload);
-
     auto it = m_streams.find(streamId);
-    if (it == m_streams.end()) {
-        if (flags & FrameFlags::SYN) {
-            // New remote stream
+    bool isNew = (it == m_streams.end());
 
-            // Check for valid ID parity (Remote ID must have opposite parity of local initiator IDs)
-            // Client creates ODD IDs, so it expects EVEN IDs. (streamId % 2 == 0)
-            // Server creates EVEN IDs, so it expects ODD IDs. (streamId % 2 == 1)
-            bool isRemoteIdValid = m_isClient ? (streamId % 2 == 0) : (streamId % 2 == 1);
+    if (isNew) {
+        if (!(flags & FrameFlags::SYN)) return; // Data for non-existent stream without SYN, ignore.
 
-            if (streamId == 0 || !isRemoteIdValid) {
-                // Ignore invalid SYN frame
-                return;
-            }
+        // New remote stream
+        bool isRemoteIdValid = m_isClient ? (streamId % 2 == 0) : (streamId % 2 == 1);
+        if (streamId == 0 || !isRemoteIdValid) return;
 
-            auto& s = m_streams[streamId];
-            s.id = streamId;
+        auto& s = m_streams[streamId];
+        s.id = streamId;
 
-            // FIX: Notify application layer about the new stream
-            if (m_onNewStream) {
-                m_onNewStream(m_newStreamArg, streamId, &s);
-            }
-
-            // Send ACK if not RST
-            if (!(flags & FrameFlags::RST)) {
-                sendFrame(FrameType::Data, FrameFlags::ACK, streamId, 0);
-            }
-
-            it = m_streams.find(streamId);
-            if (it == m_streams.end()) return; // Should not happen if m_onNewStream didn't remove it.
-        } else {
-            // Data frame for non-existent stream (ignore or RST)
-            return;
+        if (m_onNewStream) {
+            m_onNewStream(m_newStreamArg, streamId, &s);
         }
+
+        // Send ACK if not RST
+        if (!(flags & FrameFlags::RST)) {
+            sendFrame(FrameType::Data, FrameFlags::ACK, streamId, 0);
+        }
+        it = m_streams.find(streamId); // Re-find iterator
+        if (it == m_streams.end()) return;
     }
 
     auto& s = it->second;
-    if (s.remoteClosed)
-        return; // Ignore data on closed stream
+    if (s.remoteClosed) return;
 
     if (length > 0) {
         if (length > s.recvWindow) {
-            // Flow Control Error: Sender violated the window size
-            sendFrame(FrameType::Data, FrameFlags::RST, streamId, 0);
-            s.remoteClosed = true;
-            s.localClosed = true;
-            if (s.onClose) s.onClose(s.arg, streamId);
-            m_streams.erase(it);
+            // Flow Control Error
+            // printf("Flow Control Error: Recv Window Exceeded on Stream %u (Len %u > Window %u)\n", streamId, length, s.recvWindow);
+            closeStream(streamId, true); // RST the stream
             return;
         }
 
         s.recvWindow -= length;
-        if (s.onData){
-            // printf("onData streamId: [%d] payload: [%s]\n", streamId, payload);
-            s.onData(s.arg, streamId, payload, length);
-        }
+        if (s.onData) s.onData(s.arg, streamId, payload, length);
 
-        // ATTENTION: Removed auto-window update here. Application must call sendWindowUpdate(delta)
-        // after it has CONSUMED 'delta' bytes of data to maintain correct flow control.
-        // sendWindowUpdate(streamId, length);
+        // NOTE: Application is responsible for calling sendWindowUpdate(delta)
     }
 
     if (flags & FrameFlags::ACK) {
-        // Stream establishment confirmed. (Optional: check if local SYN was sent)
+        // Stream established. (For C++ implementation, this can signal go-ahead)
     }
 
     if (flags & FrameFlags::FIN || flags & FrameFlags::RST) {
         s.remoteClosed = true;
         if (s.onClose && !s.localClosed) {
-            s.onClose(s.arg, streamId); // Notify close if not already closed locally
+            s.onClose(s.arg, streamId);
         }
-        if (s.localClosed) m_streams.erase(it);
+        if (s.localClosed || flags & FrameFlags::RST) {
+            m_streams.erase(it); // Fully closed or hard reset
+        }
     }
 }
 
-
+// FIX for Yamux: Delta is in Length field
 void MultiplexedTunnel::handleWindowUpdateFrame(uint32_t streamId, const uint8_t* payload, uint32_t length) {
+    if (streamId == 0) return; // Must not be for Session
 
-    if (length != 4 || streamId == 0)
-        return;
-    uint32_t delta;
-    memcpy(&delta, payload, 4);
+    uint32_t delta = length; // Delta is in the length field in Yamux
 
     auto it = m_streams.find(streamId);
     if (it == m_streams.end()) return;
@@ -292,30 +304,67 @@ void MultiplexedTunnel::handleWindowUpdateFrame(uint32_t streamId, const uint8_t
     processPending(streamId);
 }
 
+void MultiplexedTunnel::handlePingFrame(uint32_t streamId, const uint8_t* payload, uint32_t length, uint16_t flags) {
+    if (streamId != 0 || length != 4) return; // Must be session-level (StreamID 0) and 4-byte payload
 
-void MultiplexedTunnel::handlePingFrame(const uint8_t* payload, uint32_t length, FrameFlags flags) {
-    if (length != 4) return;
-
-    uint32_t value;
-    memcpy(&value, payload, 4);
+    uint32_t netValue;
+    memcpy(&netValue, payload, 4);
+    uint32_t value = ntohl(netValue); // Value is Big-Endian
 
     if (flags & FrameFlags::ACK) {
-        // پاسخ دریافت شده
+        // Pong received. You can use 'value' for RTT calculation here.
+        // printf("Pong received: %u\n", value);
     } else {
-        // درخواست ping → پاسخ بده
-        sendFrame(FrameType::Ping, FrameFlags::ACK, 0, 4, payload);
+        // Ping request → send Pong (ACK)
+        // printf("Ping received: %u. Sending Pong.\n", value);
+        sendPing(true, value);
     }
 }
 
-
 void MultiplexedTunnel::handleGoAwayFrame(const uint8_t* payload, uint32_t length) {
     if (length != 4) return;
-    uint32_t code;
-    memcpy(&code, payload, 4);
 
-    for (auto& [id, s] : m_streams) {
-        if (s.onClose) s.onClose(s.arg, s.id);
+    uint32_t netCode;
+    memcpy(&netCode, payload, 4);
+    uint32_t code = ntohl(netCode);
+
+    // printf("GoAway received. Code: %u\n", code);
+
+    // Close all active streams
+    std::vector<uint32_t> ids;
+    for (const auto& pair : m_streams) ids.push_back(pair.first);
+
+    for (uint32_t id : ids) {
+        auto it = m_streams.find(id);
+        if (it != m_streams.end()) {
+            auto& s = it->second;
+            if (s.onClose) s.onClose(s.arg, s.id);
+            m_streams.erase(it);
+        }
     }
-    m_streams.clear();
+
+    // Close the underlying TCP socket immediately
     close(true);
+}
+
+void MultiplexedTunnel::processPending(uint32_t streamId) {
+    auto it = m_streams.find(streamId);
+    if (it == m_streams.end()) return;
+
+    auto& s = it->second;
+    while (!s.pendingData.empty() && s.sendWindow > 0) {
+        auto& buf = s.pendingData.front();
+        uint32_t chunk = std::min<uint32_t>((uint32_t)buf.size(), s.sendWindow);
+
+        // Send the chunk
+        sendFrame(FrameType::Data, FrameFlags(0), streamId, chunk, buf.data());
+        s.sendWindow -= chunk;
+
+        if (chunk < buf.size()) {
+            // Partial send, keep the rest in the front
+            buf.erase(buf.begin(), buf.begin() + chunk);
+            break;
+        }
+        s.pendingData.pop_front(); // Entire buffer sent
+    }
 }
