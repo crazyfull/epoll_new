@@ -13,6 +13,7 @@
 constexpr uint8_t YAMUX_VERSION = 0; // The official Yamux version
 constexpr uint32_t HEADER_SIZE = 12;
 constexpr uint32_t INITIAL_WINDOW_SIZE = 256 * 1024;
+constexpr uint32_t WINDOW_UPDATE_THRESHOLD = INITIAL_WINDOW_SIZE / 2; // 8 KB
 constexpr uint32_t BACK_PRESSURE_LIMIT = 4 * 1024 * 1024; // Example limit on write queue
 
 // Frame types
@@ -48,6 +49,7 @@ public:
         uint32_t id;
         uint32_t sendWindow = INITIAL_WINDOW_SIZE; // Available space to SEND data
         uint32_t recvWindow = INITIAL_WINDOW_SIZE; // Available space to RECEIVE data
+        uint32_t unackedRecvBytes = 0;
         bool localClosed = false;
         bool remoteClosed = false;
         std::deque<std::vector<uint8_t>> pendingData; // Data waiting for sendWindow to increase
@@ -68,8 +70,8 @@ public:
     void sendToStream(uint32_t streamId, const uint8_t* data, size_t len);
     void closeStream(uint32_t streamId, bool rst = false);
 
-    // YAMUX: Delta is sent in the Length field of the header, no payload.
-    void sendWindowUpdate(uint32_t streamId, uint32_t delta);
+
+    void trySendWindowUpdate(uint32_t streamId, uint32_t consumedLength);
 
     // YAMUX: Ping/Pong
     void sendPing(bool isACK, uint32_t value);
@@ -89,9 +91,11 @@ protected:
 
     // Handlers for received frames
     void handleDataFrame(uint32_t streamId, const uint8_t* payload, uint32_t length, uint16_t flags);
-    void handleWindowUpdateFrame(uint32_t streamId, const uint8_t* payload, uint32_t length);
-    void handlePingFrame(uint32_t streamId, const uint8_t* payload, uint32_t length, uint16_t flags);
-    void handleGoAwayFrame(const uint8_t* payload, uint32_t length);
+    void handleWindowUpdateFrame(uint32_t streamId, uint32_t length);
+    void handlePingFrame(uint32_t streamId, uint32_t length, uint16_t flags);
+    void handleGoAwayFrame(uint32_t length);
+    // YAMUX: Delta is sent in the Length field of the header, no payload.
+    void sendWindowUpdate(uint32_t streamId, uint32_t delta);
 
 private:
     bool m_isClient;
