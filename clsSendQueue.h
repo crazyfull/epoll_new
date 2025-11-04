@@ -4,8 +4,6 @@
 #include "clsBufferPool.h"
 #include <cstring>
 #include <deque>
-#include <list>
-//#include <list>
 
 class SendQueue {
 public:
@@ -32,10 +30,7 @@ public:
 
 
 private:
-
-
     BufferPool& m_pool;
-    //std::list<Buffer> m_queue;
     std::deque<Buffer> m_queue;
     size_t m_len;
 };
