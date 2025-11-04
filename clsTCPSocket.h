@@ -10,8 +10,6 @@
 #include "SocketContext.h"
 #include "clsDNSLookup.h"
 
-// ============================== SocketBase (OOP API) ======================
-// Virtual only on non-hot paths; hot-path onData via function-pointer.
 class Server;
 class EpollReactor;
 class TCPSocket

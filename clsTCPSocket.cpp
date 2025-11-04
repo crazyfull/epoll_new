@@ -3,7 +3,6 @@
 #include "clsSocketList.h"
 #include "epoll.h"
 #include "clsDNSLookup.h"
-#include "clsServer.h"
 
 TCPSocket::TCPSocket()
 {
@@ -462,7 +461,7 @@ void TCPSocket::setOnResume(OnResumeFn fn, void* Arg) {
 
 bool TCPSocket::adoptFd(int fd) {
 
-    int sndbuf = 1 * 1024; // 16KB
+    int sndbuf = 1024; // 16KB
     //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
     //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, sizeof(sndbuf));
 
@@ -486,12 +485,8 @@ bool TCPSocket::adoptFd(int fd) {
     return true;
 }
 
-
-
-
 void TCPSocket::onReadable()
 {
-
     while(true)
     {
         ssize_t bytesRec = ::recv(m_SocketContext.fd, m_SocketContext.rBuffer + m_SocketContext.rBufferLength, m_SocketContext.rBufferCapacity - m_SocketContext.rBufferLength -1, 0);
@@ -703,7 +698,7 @@ void TCPSocket::onWritable() {
                     remaining -= buf.len;
                     m_SocketContext.writeQueue->pop_front();
 
-                    printf("writeQueue->pop_front(): [%zu] remaining[%zu]\n", m_SocketContext.writeQueue->size() , remaining );
+                    //printf("writeQueue->pop_front(): [%zu] remaining[%zu]\n", m_SocketContext.writeQueue->size() , remaining );
                 } else {
 
                     memmove(buf.data, static_cast<char*>(buf.data) + remaining, buf.len - remaining);
