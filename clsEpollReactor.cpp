@@ -603,7 +603,7 @@ void EpollReactor::maintenance()
         }
     }
 
-    printf("maintenance() Active socket count: %d\n", m_pConnectionList->count());
+    //printf("maintenance() Active socket count: %d\n", m_pConnectionList->count());
 
     /* peymayesh ro socket list ke behine nist
     std::vector<SockInfo*> *pConnectionListSockets = m_pConnectionList->list();

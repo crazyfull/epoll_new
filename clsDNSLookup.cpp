@@ -1,6 +1,5 @@
 #include "clsDNSLookup.h"
 #include "clsEpollReactor.h"
-#include "clsTimer.h"
 #include <cstdio>
 #include <cstring>
 #include <errno.h>

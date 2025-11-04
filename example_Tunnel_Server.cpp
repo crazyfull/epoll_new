@@ -1,4 +1,4 @@
-#include "clsEpollReactor.h"
+//server
 #include "clsMultiplexedTunnel.h"
 #include "clsServer.h"
 #include <iostream>
@@ -10,17 +10,12 @@ void onServerStreamData(void* arg, uint32_t streamId, const uint8_t* data, size_
     std::string received_message((const char*)data, len);
     std::cout << "Server: Received on stream " << streamId << ": " << received_message << std::endl;
 
-    // Echo: داده دریافتی را به همان Stream برگشت می‌دهد
+    // Echo
     tunnel->sendToStream(streamId, data, len);
-
-    // نکته مهم: Flow Control
-    // پس از مصرف (Echo کردن) داده‌ها، باید Window Update را ارسال کنیم تا کلاینت بداند
-    // فضای کافی برای ارسال مجدد وجود دارد.
-    tunnel->sendWindowUpdate(streamId, len);
 }
 
 void onServerStreamClose(void* arg, uint32_t streamId) {
-    std::cout << "Server: Stream " << streamId << " closed." << std::endl;
+    std::cout << "onServerStreamClose " << streamId << " closed." << std::endl;
 }
 
 void onServerNewStream(void* arg, uint32_t streamId, MultiplexedTunnel::Stream* newStream) {
