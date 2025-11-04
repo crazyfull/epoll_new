@@ -90,8 +90,9 @@ protected:
     void processPending(uint32_t streamId);
 
     // Handlers for received frames
+    void handleNewStream(uint32_t streamId, uint16_t flags);
     void handleDataFrame(uint32_t streamId, const uint8_t* payload, uint32_t length, uint16_t flags);
-    void handleWindowUpdateFrame(uint32_t streamId, uint32_t length);
+    void handleWindowUpdateFrame(uint32_t streamId, uint32_t length, uint16_t flags);
     void handlePingFrame(uint32_t streamId, uint32_t length, uint16_t flags);
     void handleGoAwayFrame(uint32_t length);
     // YAMUX: Delta is sent in the Length field of the header, no payload.

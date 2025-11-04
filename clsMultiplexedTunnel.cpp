@@ -1,4 +1,5 @@
 #include "clsMultiplexedTunnel.h"
+#include <iomanip>
 #include <iostream>
 #include <cmath> // for std::min (though std::min in <algorithm> is better)
 
@@ -33,8 +34,8 @@ uint32_t MultiplexedTunnel::openStream(OnStreamDataFn onData, OnStreamCloseFn on
     s.onClose = onClose;
     s.arg = arg;
 
-    // Send SYN frame (Data type with SYN flag, length=0)
-    sendFrame(FrameType::Data, FrameFlags::SYN, id, 0);
+    // baraye baz kardane stream jadid Send SYN frame (Data or WindowUpdate type with SYN flag, length=0)
+    sendFrame(FrameType::WindowUpdate, FrameFlags::SYN, id, 0);
     return id;
 }
 
@@ -176,10 +177,74 @@ void MultiplexedTunnel::sendFrame(FrameType type, FrameFlags flags, uint32_t str
     send(header, HEADER_SIZE);
     if (length > 0 && payload) send(payload, length);
 }
+/*
+void printBinaryString(const std::string& data) {
+    for (char c : data) {
+        if (c >= 32 && c <= 126) {
+            std::cout << c;
+        } else {
+            std::cout << ".";
+        }
+    }
+    std::cout << std::dec << std::endl;
+}
+*/
+void printBinaryString(const std::string& data) {
+    for (char c : data) {
+        if (c >= 32 && c <= 126) { // کاراکترهای قابل چاپ ASCII
+            std::cout << c;
+        } else if (c == 0) {
+            std::cout << "\\0"; // نمایش خاص برای null
+        } else {
+            std::cout << "\\x" << std::hex << std::setw(2) << std::setfill('0')
+            << (static_cast<unsigned int>(c) & 0xFF);
+        }
+    }
+    std::cout << std::dec << std::endl;
+}
+
+void printHexDump(const std::string& data) {
+    const int bytesPerLine = 16;
+
+    for (size_t i = 0; i < data.size(); i += bytesPerLine) {
+        // آفست
+        std::cout << std::hex << std::setw(8) << std::setfill('0') << i << ": ";
+
+        // بایت‌های هگز
+        for (int j = 0; j < bytesPerLine; j++) {
+            if (i + j < data.size()) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0')
+                << (static_cast<unsigned int>(data[i + j]) & 0xFF) << " ";
+            } else {
+                std::cout << "   ";
+            }
+        }
+
+        // کاراکترهای قابل چاپ
+        std::cout << " | ";
+        for (int j = 0; j < bytesPerLine && i + j < data.size(); j++) {
+            char c = data[i + j];
+            if (c >= 32 && c <= 126) {
+                std::cout << c;
+            } else {
+                std::cout << ".";
+            }
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::dec;
+}
 
 void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
+    /*
+    std::string input((char*)data, len);
+    printf("onReceiveData [");
+    printHexDump(input);
+    printf("]\n");
+*/
     m_parseBuffer.insert(m_parseBuffer.end(), data, data + len);
     size_t pos = 0;
+
 
     while (pos + HEADER_SIZE <= m_parseBuffer.size()) {
         uint8_t ver = m_parseBuffer[pos++];
@@ -193,17 +258,20 @@ void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
 
         // Flags (16 bits) - Host Byte Order
         uint16_t netFlags;
-        memcpy(&netFlags, m_parseBuffer.data() + pos, 2); pos += 2;
+        memcpy(&netFlags, m_parseBuffer.data() + pos, 2);
+        pos += 2;
         uint16_t flags = ntohs(netFlags);
 
         // StreamID (32 bits) - Host Byte Order
         uint32_t netStreamId;
-        memcpy(&netStreamId, m_parseBuffer.data() + pos, 4); pos += 4;
+        memcpy(&netStreamId, m_parseBuffer.data() + pos, 4);
+        pos += 4;
         uint32_t streamId = ntohl(netStreamId);
 
         // Length/Delta (32 bits) - Host Byte Order
         uint32_t netLength;
-        memcpy(&netLength, m_parseBuffer.data() + pos, 4); pos += 4;
+        memcpy(&netLength, m_parseBuffer.data() + pos, 4);
+        pos += 4;
         uint32_t length = ntohl(netLength);
 
         const uint8_t* payload = nullptr;
@@ -228,7 +296,7 @@ void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
             break;
         case FrameType::WindowUpdate:
             // YAMUX: length is delta
-            handleWindowUpdateFrame(streamId, length);
+            handleWindowUpdateFrame(streamId, length, flags);
             break;
         case FrameType::Ping:
             // YAMUX: length is value
@@ -250,30 +318,38 @@ void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
 
 // --- Frame Handlers ---
 
+void MultiplexedTunnel::handleNewStream(uint32_t streamId, uint16_t flags)
+{
+    if (!(flags & FrameFlags::SYN))
+        return; // Data for non-existent stream without SYN, ignore.
+
+    // New remote stream
+    bool isRemoteIdValid = m_isClient ? (streamId % 2 == 0) : (streamId % 2 == 1);
+    if (streamId == 0 || !isRemoteIdValid)
+        return;
+
+    auto& s = m_streams[streamId];
+    s.id = streamId;
+
+    if (m_onNewStream) {
+        //callback
+        m_onNewStream(m_newStreamArg, streamId, &s);
+    }
+
+    // Send ACK if not RST
+    if (!(flags & FrameFlags::RST)) {
+        sendFrame(FrameType::Data, FrameFlags::ACK, streamId, 0);
+    }
+
+}
+
+
 void MultiplexedTunnel::handleDataFrame(uint32_t streamId, const uint8_t* payload, uint32_t length, uint16_t flags) {
     auto it = m_streams.find(streamId);
     bool isNew = (it == m_streams.end());
 
     if (isNew) {
-        if (!(flags & FrameFlags::SYN))
-            return; // Data for non-existent stream without SYN, ignore.
-
-        // New remote stream
-        bool isRemoteIdValid = m_isClient ? (streamId % 2 == 0) : (streamId % 2 == 1);
-        if (streamId == 0 || !isRemoteIdValid)
-            return;
-
-        auto& s = m_streams[streamId];
-        s.id = streamId;
-
-        if (m_onNewStream) {
-            m_onNewStream(m_newStreamArg, streamId, &s);
-        }
-
-        // Send ACK if not RST
-        if (!(flags & FrameFlags::RST)) {
-            sendFrame(FrameType::Data, FrameFlags::ACK, streamId, 0);
-        }
+        handleNewStream(streamId, flags);
 
         it = m_streams.find(streamId); // Re-find iterator
         if (it == m_streams.end())
@@ -281,7 +357,8 @@ void MultiplexedTunnel::handleDataFrame(uint32_t streamId, const uint8_t* payloa
     }
 
     auto& s = it->second;
-    if (s.remoteClosed) return;
+    if (s.remoteClosed)
+        return;
 
     if (length > 0) {
         if (length > s.recvWindow) {
@@ -319,20 +396,29 @@ void MultiplexedTunnel::handleDataFrame(uint32_t streamId, const uint8_t* payloa
 }
 
 // FIX for Yamux: Delta is in Length field
-void MultiplexedTunnel::handleWindowUpdateFrame(uint32_t streamId, uint32_t length) {
+void MultiplexedTunnel::handleWindowUpdateFrame(uint32_t streamId, uint32_t length, uint16_t flags) {
     if (streamId == 0)
         return; // Must not be for Session
 
-    uint32_t delta = length; // Delta is in the length field in Yamux
-
     auto it = m_streams.find(streamId);
-    if (it == m_streams.end())
-        return;
+    bool isNew = (it == m_streams.end());
 
-    auto& s = it->second;
-    s.sendWindow += delta;
-    printf("get Window update for stream: [%u] new sendWindow : [%d] recvWindow : [%d] \n", streamId, s.sendWindow, s.recvWindow);
-    processPending(streamId);
+    if (isNew) {
+        handleNewStream(streamId, flags);
+    }
+
+    if (length > 0) {
+        uint32_t delta = length; // Delta is in the length field in Yamux
+
+        //auto it = m_streams.find(streamId);
+        if (it == m_streams.end())
+            return;
+
+        auto& s = it->second;
+        s.sendWindow += delta;
+        printf("get Window update for stream: [%u] new sendWindow : [%d] recvWindow : [%d] \n", streamId, s.sendWindow, s.recvWindow);
+        processPending(streamId);
+    }
 }
 
 void MultiplexedTunnel::handlePingFrame(uint32_t streamId, uint32_t length, uint16_t flags) {
