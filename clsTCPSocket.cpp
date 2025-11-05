@@ -244,7 +244,7 @@ void TCPSocket::close(bool force) {
         ::close(m_SocketContext.fd);
 
 
-        printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
+        //printf("recBytes: [%lu] sndBytes: [%lu]\n", recBytes, sndBytes);
         handleOnClose();
 
         //disable garbage collector
@@ -492,7 +492,7 @@ void TCPSocket::onReadable()
         ssize_t bytesRec = ::recv(m_SocketContext.fd, m_SocketContext.rBuffer + m_SocketContext.rBufferLength, m_SocketContext.rBufferCapacity - m_SocketContext.rBufferLength -1, 0);
 
         if(bytesRec > 0)  {
-            recBytes += bytesRec;
+            //recBytes += bytesRec;
 
             m_SocketContext.rBufferLength += (size_t) bytesRec;
             //m_SocketContext.rBuffer[m_SocketContext.rBufferLength] = 0;
@@ -540,15 +540,16 @@ void TCPSocket::onReadable()
 
 
 void TCPSocket::send(const void* data, size_t len) {
-    //printf("TCPSocket::getStatus: %d\n", getStatus());
+    //printf("TCPSocket::send getStatus: %u\n", getStatus());
     if (!data || len == 0 || !m_pReactor)
         return;
 
     while (len > 0 && m_SocketContext.writeQueue->empty()) {
         ssize_t n = ::send(m_SocketContext.fd, data, len, MSG_NOSIGNAL | MSG_DONTWAIT);
+        //printf("TCPSocket::send n: %zd\n", n);
         if (n > 0) {
 
-            sndBytes += n;
+            //sndBytes += n;
             data = (const char*)data + n;
             len -= (size_t)n;
             updateLastActive();
@@ -687,7 +688,7 @@ void TCPSocket::onWritable() {
         ssize_t bytesSent = ::sendmsg(m_SocketContext.fd, &msg, MSG_NOSIGNAL | MSG_DONTWAIT);
         printf("bytesSent: %zd\n", bytesSent);
         if (bytesSent > 0) {
-            sndBytes += bytesSent;
+            //sndBytes += bytesSent;
             updateLastActive();
             size_t remaining = static_cast<size_t>(bytesSent);
 

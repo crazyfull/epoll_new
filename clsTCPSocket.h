@@ -1,7 +1,6 @@
 #ifndef CLSTCPSOCKET_H
 #define CLSTCPSOCKET_H
 //
-#include "clsSendQueue.h"
 #include "epoll.h"
 #include <functional>
 #include <memory>
@@ -23,10 +22,6 @@ public:
         Connecting = 4,
         Connected = 5
     };
-
-
-    uint64_t recBytes = 0;
-    uint64_t sndBytes = 0;
 
     void setReactor(EpollReactor* r);
 
