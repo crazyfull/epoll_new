@@ -1,15 +1,100 @@
 #include "clsMultiplexedTunnel.h"
+#include <cmath>
+#include <cstdio>
 #include <iomanip>
 #include <iostream>
-#include <cmath> // for std::min (though std::min in <algorithm> is better)
+#include <vector>
+#include "clsEpollReactor.h"
 
-// Assume these are provided by TCPSocket/Epoll environment
-// #define BACK_PRESSURE_LIMIT 4 * 1024 * 1024
+
+bool MultiplexedTunnel::initParseBuffer() {
+    if (m_parseBuffer)
+        return true;
+    /**/
+    //m_SocketContext.rBuffer = (char*)m_pReactor->bufferPool()->allocate(SLAB_SIZE);
+    if (getReactor() && getReactor()->bufferPool()) {
+        m_parseBuffer = (uint8_t*)getReactor()->bufferPool()->allocate(PARSE_BUFFER_SIZE);
+        if (m_parseBuffer) {
+            m_parseBufferCapacity = PARSE_BUFFER_SIZE;
+            m_parseBufferLength = 0;
+            return true;
+        }
+    }
+
+    m_parseBuffer = nullptr;
+    m_parseBufferCapacity = 0;
+    return false;
+}
+
+void MultiplexedTunnel::releaseParseBuffer() {
+    /**/
+    if (m_parseBuffer) {
+        if (getReactor() && getReactor()->bufferPool()) {
+            getReactor()->bufferPool()->deallocate(m_parseBuffer);
+        }
+        m_parseBuffer = nullptr;
+        m_parseBufferCapacity = 0;
+        m_parseBufferLength = 0;
+    }
+
+}
+
+bool MultiplexedTunnel::resizeParseBuffer(size_t newCapacity) {
+    if (newCapacity <= m_parseBufferCapacity)
+        return true;
+
+    if (getReactor() && getReactor()->bufferPool()) {
+        void* newBuf = getReactor()->bufferPool()->reallocate(m_parseBuffer, newCapacity);
+
+        if (newBuf) {
+            m_parseBuffer = (uint8_t*)newBuf;
+            m_parseBufferCapacity = newCapacity;
+            printf("Parse buffer resized to %zu bytes.\n", newCapacity);
+            return true;
+        } else {
+            // Reallocation failed
+            printf("Error: Parse buffer reallocation failed for size %zu.\n", newCapacity);
+        }
+    }
+    return false;
+}
+
+bool MultiplexedTunnel::initSendQueue(Stream& session) {
+    if (session.pendingData) {
+        return true;
+    }
+
+    //
+    if (getReactor() && getReactor()->bufferPool()) {
+        // create
+        session.pendingData = new SendQueue(*getReactor()->bufferPool());
+
+        if (session.pendingData) {
+            return true;
+        } else {
+            // failed allocate
+            shutdown(GoAwayCode::InternalError);
+            return false;
+        }
+    } else {
+        // Reactor is not found
+        shutdown(GoAwayCode::InternalError);
+        return false;
+    }
+}
 
 // --- Public API ---
 
-MultiplexedTunnel::MultiplexedTunnel(bool isClient) : m_isClient(isClient), m_nextStreamId(isClient ? 1 : 2) {
-    //
+MultiplexedTunnel::MultiplexedTunnel(bool isClient) :
+    m_isClient(isClient),
+    m_nextStreamId(isClient ? 1 : 2),
+    m_parseBufferLength(0),
+    m_parseBufferCapacity(0)
+{
+}
+
+MultiplexedTunnel::~MultiplexedTunnel() {
+    releaseParseBuffer();
 }
 
 void MultiplexedTunnel::setOnNewStream(OnNewStreamFn fn, void* arg) {
@@ -20,61 +105,70 @@ void MultiplexedTunnel::setOnNewStream(OnNewStreamFn fn, void* arg) {
 uint32_t MultiplexedTunnel::openStream(OnStreamDataFn onData, OnStreamCloseFn onClose, void* arg) {
     uint32_t id = m_nextStreamId;
 
-    // Check for stream ID exhaustion (assuming uint32 max is the limit)
     if (id + 2 < id) {
-        // Stream ID overflow, should send GoAway
         shutdown(GoAwayCode::InternalError);
         return 0;
     }
-    m_nextStreamId += 2; // Increment by 2 to keep parity
+    m_nextStreamId += 2;
 
-    auto& s = m_streams[id];
+    Stream& s = m_streams[id];
     s.id = id;
     s.onData = onData;
     s.onClose = onClose;
     s.arg = arg;
 
-    // baraye baz kardane stream jadid Send SYN frame (Data or WindowUpdate type with SYN flag, length=0)
+    // create Queue
+    if (getReactor() && getReactor()->bufferPool()) {
+        s.pendingData = new SendQueue(*getReactor()->bufferPool());
+    } else {
+        m_streams.erase(id);
+        return 0;
+    }
+
     sendFrame(FrameType::WindowUpdate, FrameFlags::SYN, id, 0);
     return id;
 }
 
+
 void MultiplexedTunnel::sendToStream(uint32_t streamId, const uint8_t* data, size_t len) {
+    if (len == 0) {
+        return;
+    }
+
     auto it = m_streams.find(streamId);
     if (it == m_streams.end() || it->second.localClosed)
         return;
 
-    Stream &seassion = it->second;
-    if (len == 0)
-        return;
+    Stream &session = it->second;
 
-    // Queue if window low
-    if (seassion.sendWindow == 0) {
-        seassion.pendingData.emplace_back(data, data + len);
-        printf("sendWindow is fulled, stream %u. Pending size: %zu\n", streamId, seassion.pendingData.size());
+    //
+    if (session.sendWindow == 0) {
+        if (!initSendQueue(session))
+            return;
+        session.pendingData->push(data, len);
+        //printf("sendWindow is fulled, stream %u. Pending size: %zu\n", streamId, session.pendingData->count());
         return;
     }
 
-    // Split into chunks based on window
+    //
     size_t pos = 0;
     while (pos < len) {
-        uint32_t chunk = std::min<uint32_t>((uint32_t)len - pos, seassion.sendWindow);
+        uint32_t chunk = std::min<uint32_t>((uint32_t)len - pos, session.sendWindow);
 
         if (chunk == 0) {
-            // Buffer the rest (occurs if sendWindow was exactly 0)
-            seassion.pendingData.emplace_back(data + pos, data + len);
+            if (!initSendQueue(session))
+                break;
+
+            session.pendingData->push(data + pos, len - pos);
             break;
         }
 
-        // Send the chunk
         sendFrame(FrameType::Data, FrameFlags(0), streamId, chunk, data + pos);
-        seassion.sendWindow -= chunk;
+        session.sendWindow -= chunk;
         pos += chunk;
     }
 
-    // Backpressure check (Assuming getSocketContext()->writeQueue exists)
     if (getSocketContext() && getSocketContext()->writeQueue->size() > BACK_PRESSURE_LIMIT) {
-        // pause_reading(); // Should be done at reactor level if needed
         printf("WARNING: Backpressure limit hit. Write queue size: %zu\n", getSocketContext()->writeQueue->size());
     }
 }
@@ -84,31 +178,17 @@ void MultiplexedTunnel::closeStream(uint32_t streamId, bool rst) {
     if (it == m_streams.end()) return;
 
     auto& s = it->second;
-    if (s.localClosed) return;
+    if (s.localClosed)
+        return;
     s.localClosed = true;
 
     FrameFlags flags = rst ? FrameFlags::RST : FrameFlags::FIN;
-    sendFrame(FrameType::Data, flags, streamId, 0); // Send FIN or RST
+    sendFrame(FrameType::Data, flags, streamId, 0);
 
     if (s.remoteClosed) {
         if (s.onClose) s.onClose(s.arg, streamId);
-        m_streams.erase(it); // Fully closed
+        m_streams.erase(it);
     }
-}
-
-
-// fix
-void MultiplexedTunnel::sendWindowUpdate(uint32_t streamId, uint32_t delta) {
-    if (streamId == 0 || delta == 0) return;
-
-    //
-    auto it = m_streams.find(streamId);
-    if (it != m_streams.end()) {
-        it->second.recvWindow += delta;
-    }
-
-    //
-    sendFrame(FrameType::WindowUpdate, FrameFlags(0), streamId, delta);
 }
 
 void MultiplexedTunnel::trySendWindowUpdate(uint32_t streamId, uint32_t consumedLength) {
@@ -120,65 +200,90 @@ void MultiplexedTunnel::trySendWindowUpdate(uint32_t streamId, uint32_t consumed
 
     if (s.unackedRecvBytes >= WINDOW_UPDATE_THRESHOLD) {
         uint32_t delta = s.unackedRecvBytes;
-        s.unackedRecvBytes = 0; // ریست کردن شمارنده
-
-        // این فراخوانی باعث افزایش recvWindow محلی نیز می‌شود (با فرض تغییرات بخش ۲)
+        s.unackedRecvBytes = 0;
         sendWindowUpdate(streamId, delta);
     }
 }
 
-void MultiplexedTunnel::sendPing(bool isACK, uint32_t value) {
-    FrameFlags flags = isACK ? FrameFlags::ACK : FrameFlags(0);
+void MultiplexedTunnel::sendWindowUpdate(uint32_t streamId, uint32_t delta) {
+    if (streamId == 0 || delta == 0)
+        return;
 
-    // FIX: To match Go implementation, use Length field for the value, no payload.
+    auto it = m_streams.find(streamId);
+    if (it != m_streams.end()) {
+        it->second.recvWindow += delta;
+    }
+    sendFrame(FrameType::WindowUpdate, FrameFlags(0), streamId, delta);
+}
+
+// FIX: متد sendPing حفظ شد.
+void MultiplexedTunnel::sendPing(bool isACK, uint32_t value) {
+    FrameFlags flags = isACK ? FrameFlags(ACK) : FrameFlags(0);
     sendFrame(FrameType::Ping, flags, 0, value);
 }
 
 
 void MultiplexedTunnel::shutdown(GoAwayCode code) {
     uint32_t codeVal = static_cast<uint32_t>(code);
-    // FIX: To match Go implementation, use Length field for the code, no payload.
     sendFrame(FrameType::GoAway, FrameFlags(0), 0, codeVal);
 
-    // Close all streams locally
-    for (auto& pair : m_streams) {
-        auto& s = pair.second;
-        if (s.onClose) s.onClose(s.arg, s.id);
-    }
-    m_streams.clear();
+    // Close all active streams (حفظ منطق قبلی)
+    std::vector<uint32_t> ids;
+    for (const auto& pair : m_streams) ids.push_back(pair.first);
 
-    // Close the underlying TCP socket
-    close(false);
+    for (uint32_t id : ids) {
+        auto it = m_streams.find(id);
+        if (it != m_streams.end()) {
+            auto& s = it->second;
+            if (s.onClose) s.onClose(s.arg, s.id);
+            m_streams.erase(it);
+        }
+    }
+
+    close(true);
 }
 
-// --- Frame Encoding/Decoding ---
+// --- Protected/Private Helpers ---
 
 void MultiplexedTunnel::sendFrame(FrameType type, FrameFlags flags, uint32_t streamId, uint32_t length, const uint8_t* payload) {
     uint8_t header[HEADER_SIZE];
 
-    // FIX: Version is 0
     header[0] = YAMUX_VERSION;
     header[1] = static_cast<uint8_t>(type);
 
-    // Flags (16 bits) - Network Byte Order
     uint16_t flagVal = static_cast<uint16_t>(flags);
     uint16_t netFlags = htons(flagVal);
     memcpy(header + 2, &netFlags, 2);
 
-    // StreamID (32 bits) - Network Byte Order
     uint32_t netStreamId = htonl(streamId);
     memcpy(header + 4, &netStreamId, 4);
 
-    // Length (32 bits) - Network Byte Order
     uint32_t netLength = htonl(length);
     memcpy(header + 8, &netLength, 4);
 
-    // Send header and payload
     send(header, HEADER_SIZE);
-    if (length > 0 && payload) send(payload, length);
+    if (length > 0 && payload)
+        send(payload, length);
 }
-/*
+
+
+void printBinaryString(const uint8_t* data, size_t len) {
+
+    printf("onReceiveData [");
+
+    for (int i = 0; i < len; i++) {
+        if (data[i] >= 32 && data[i] <= 126) {
+            std::cout << data[i];
+            printf("%c", data[i]);
+        } else {
+            printf(".");
+        }
+    }
+    printf("]\n");
+}
+
 void printBinaryString(const std::string& data) {
+    printf("onReceiveData [");
     for (char c : data) {
         if (c >= 32 && c <= 126) {
             std::cout << c;
@@ -187,20 +292,7 @@ void printBinaryString(const std::string& data) {
         }
     }
     std::cout << std::dec << std::endl;
-}
-*/
-void printBinaryString(const std::string& data) {
-    for (char c : data) {
-        if (c >= 32 && c <= 126) { // کاراکترهای قابل چاپ ASCII
-            std::cout << c;
-        } else if (c == 0) {
-            std::cout << "\\0"; // نمایش خاص برای null
-        } else {
-            std::cout << "\\x" << std::hex << std::setw(2) << std::setfill('0')
-            << (static_cast<unsigned int>(c) & 0xFF);
-        }
-    }
-    std::cout << std::dec << std::endl;
+    printf("]\n");
 }
 
 void printHexDump(const std::string& data) {
@@ -235,88 +327,537 @@ void printHexDump(const std::string& data) {
     std::cout << std::dec;
 }
 
-void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
-    /*
-    std::string input((char*)data, len);
-    printf("onReceiveData [");
-    printHexDump(input);
-    printf("]\n");
+/*
+ std::string input((char*)data, len);
+    printBinaryString(input);
+
+    //printBinaryString(data, len);
+
+00 01 00 02 00 00 00 01 00 00 00 00
+00 00 00 00 00 00 00 01 00 00 00 17 msg
+
+
+00 01 00 02 00 00 00 01 00 00 00 00
+
 */
-    m_parseBuffer.insert(m_parseBuffer.end(), data, data + len);
+
+/*
+void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
+
+    std::string input((char*)data, len);
+    //printBinaryString(input);
+    printHexDump(input);
+
+    // FIX: استفاده از initParseBuffer()
+    if (!m_parseBuffer) {
+        if (!initParseBuffer()) {
+            shutdown(GoAwayCode::InternalError);
+            return;
+        }
+    }
+
+    // printf("onReceiveData usedsize: %zu, newlength: %zu, BufferCapacity: %zu\n", m_parseBufferLength , len, m_parseBufferCapacity);
+
+    // FIX: کپی داده به بافر از BufferPool
+    if (m_parseBufferLength + len > m_parseBufferCapacity) {
+        printf("Protocol Error: Parse buffer overflow.\n");
+        shutdown(GoAwayCode::ProtocolError);
+        return;
+    }
+
+    memcpy(m_parseBuffer + m_parseBufferLength, data, len);
+    m_parseBufferLength += len;
+
     size_t pos = 0;
 
+    while (pos + HEADER_SIZE <= m_parseBufferLength) {
 
-    while (pos + HEADER_SIZE <= m_parseBuffer.size()) {
         uint8_t ver = m_parseBuffer[pos++];
         if (ver != YAMUX_VERSION) {
-            // printf("Protocol Error: Invalid Version %u\n", ver);
             shutdown(GoAwayCode::ProtocolError);
             break;
         }
 
         auto type = static_cast<FrameType>(m_parseBuffer[pos++]);
 
-        // Flags (16 bits) - Host Byte Order
+        // Flags
         uint16_t netFlags;
-        memcpy(&netFlags, m_parseBuffer.data() + pos, 2);
-        pos += 2;
+        memcpy(&netFlags, m_parseBuffer + pos, 2); pos += 2;
         uint16_t flags = ntohs(netFlags);
 
-        // StreamID (32 bits) - Host Byte Order
+        // StreamID
         uint32_t netStreamId;
-        memcpy(&netStreamId, m_parseBuffer.data() + pos, 4);
-        pos += 4;
+        memcpy(&netStreamId, m_parseBuffer + pos, 4); pos += 4;
         uint32_t streamId = ntohl(netStreamId);
 
-        // Length/Delta (32 bits) - Host Byte Order
+        // Length/Delta
         uint32_t netLength;
-        memcpy(&netLength, m_parseBuffer.data() + pos, 4);
-        pos += 4;
+        memcpy(&netLength, m_parseBuffer + pos, 4); pos += 4;
         uint32_t length = ntohl(netLength);
 
         const uint8_t* payload = nullptr;
 
-        // FIX: Only for Data frames, check and consume payload. For others, use length as value, ignore any actual payload bytes to match Go impl.
         if (type == FrameType::Data) {
-            // Check if full payload is available
-            if (pos + length > m_parseBuffer.size()) {
-                pos -= HEADER_SIZE; // Rollback
+            if (pos + length > m_parseBufferLength) {
+                pos -= HEADER_SIZE;
                 break; // Partial data
             }
             if (length > 0) {
-                payload = m_parseBuffer.data() + pos;
+                payload = m_parseBuffer + pos;
             }
             pos += length;
         }
-        // For non-Data, do not advance pos for length, do not set payload, process immediately.
 
         switch (type) {
         case FrameType::Data:
             handleDataFrame(streamId, payload, length, flags);
             break;
         case FrameType::WindowUpdate:
-            // YAMUX: length is delta
             handleWindowUpdateFrame(streamId, length, flags);
             break;
         case FrameType::Ping:
-            // YAMUX: length is value
             handlePingFrame(streamId, length, flags);
             break;
         case FrameType::GoAway:
-            // YAMUX: length is code
             handleGoAwayFrame(length);
             break;
         default:
-            // printf("Protocol Error: Invalid Frame Type %u\n", (uint32_t)type);
             shutdown(GoAwayCode::ProtocolError);
-            // Do not return here, continue to consume buffer
+            return;
         }
     }
 
-    if (pos > 0) m_parseBuffer.erase(m_parseBuffer.begin(), m_parseBuffer.begin() + pos);
+    // FIX: فشرده‌سازی بافر (Compact) - کاهش کپی داده
+    if (pos > 0) {
+        if (pos < m_parseBufferLength) {
+            memmove(m_parseBuffer, m_parseBuffer + pos, m_parseBufferLength - pos);
+        }
+        m_parseBufferLength -= pos;
+    }
+}
+*/
+
+
+/* OK
+void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
+    /*
+    std::string input((char*)data, len);
+    printBinaryString(input);
+    //* /
+
+    size_t data_pos = 0; // پوزیشنی که از بافر ورودی (data) خوانده‌ایم.
+
+    // ۱. فریم ناقصی که از قبل در m_parseBuffer مانده است را تکمیل می‌کنیم.
+    if (m_parseBufferLength > 0) {
+
+        if (!m_parseBuffer) {
+            if (!initParseBuffer()) {
+                shutdown(GoAwayCode::InternalError);
+                return;
+            }
+        }
+
+        // ابتدا فرض می‌کنیم که فقط می‌خواهیم هدر را کامل کنیم تا طول فریم را بدانیم.
+        size_t neededForHeader = (m_parseBufferLength < HEADER_SIZE) ? (HEADER_SIZE - m_parseBufferLength) : 0;
+        size_t copyLen = std::min(neededForHeader, len - data_pos);
+
+        // تکمیل هدر از داده ورودی (Single-Copy)
+        if (copyLen > 0) {
+            memcpy(m_parseBuffer + m_parseBufferLength, data + data_pos, copyLen);
+            m_parseBufferLength += copyLen;
+            data_pos += copyLen;
+
+            if (m_parseBufferLength < HEADER_SIZE) {
+                // هدر هنوز کامل نشده، منتظر داده بیشتر می‌مانیم.
+                printf("01\n");
+                return;
+            }
+        }
+
+        // --- هدر اکنون در m_parseBuffer کامل است ---
+
+        uint32_t netLength;
+        memcpy(&netLength, m_parseBuffer + 8, 4);
+        uint32_t payloadLength = ntohl(netLength);
+
+        uint8_t type_val = m_parseBuffer[1];
+        size_t totalFrameSize = HEADER_SIZE;
+        if (type_val == static_cast<uint8_t>(FrameType::Data)) {
+            totalFrameSize += payloadLength;
+        }
+
+        size_t neededForFrame = totalFrameSize - m_parseBufferLength;
+
+        // تکمیل مابقی فریم (Payload) از داده ورودی (Single-Copy)
+        if (neededForFrame > 0) {
+            size_t remainingInput = len - data_pos;
+            copyLen = std::min(neededForFrame, remainingInput);
+
+            // بررسی ظرفیت: m_parseBuffer باید بتواند یک فریم کامل (نه کل بافر ورودی) را در خود جای دهد.
+            if (m_parseBufferCapacity < totalFrameSize) {
+                printf("Protocol Error: Frame size %zu exceeds buffer capacity %zu\n", totalFrameSize, m_parseBufferCapacity);
+                shutdown(GoAwayCode::InternalError);
+                printf("02\n");
+                return;
+            }
+
+            if (copyLen > 0) {
+                // کپی مابقی فریم
+                memcpy(m_parseBuffer + m_parseBufferLength, data + data_pos, copyLen);
+                m_parseBufferLength += copyLen;
+                data_pos += copyLen;
+            }
+
+            if (m_parseBufferLength < totalFrameSize) {
+                // فریم کامل نشد، منتظر داده بیشتر می‌مانیم.
+                //printf("03\n");
+                return;
+            }
+        }
+
+        // --- فریم اول اکنون در m_parseBuffer کامل شده و آماده پردازش است ---
+
+        // پردازش فریم کامل شده از m_parseBuffer
+
+        size_t pos_fragment = 0;
+
+        uint8_t ver = m_parseBuffer[pos_fragment++];
+        auto type = static_cast<FrameType>(m_parseBuffer[pos_fragment++]);
+
+        uint16_t netFlags;
+        memcpy(&netFlags, m_parseBuffer + pos_fragment, 2); pos_fragment += 2;
+        uint16_t flags = ntohs(netFlags);
+
+        uint32_t netStreamId;
+        memcpy(&netStreamId, m_parseBuffer + pos_fragment, 4); pos_fragment += 4;
+        uint32_t streamId = ntohl(netStreamId);
+
+        pos_fragment += 4; // پرش از Length/Delta
+
+        const uint8_t* payload = nullptr;
+        if (type == FrameType::Data) {
+            if (payloadLength > 0) {
+                payload = m_parseBuffer + pos_fragment;
+            }
+            pos_fragment += payloadLength;
+        }
+
+        // فراخوانی Handler
+        switch (type) {
+        case FrameType::Data:
+            handleDataFrame(streamId, payload, payloadLength, flags);
+            break;
+        case FrameType::WindowUpdate:
+            handleWindowUpdateFrame(streamId, payloadLength,flags);
+            break;
+        case FrameType::Ping:
+            handlePingFrame(streamId, payloadLength, flags);
+            break;
+        case FrameType::GoAway:
+            handleGoAwayFrame(payloadLength);
+            break;
+        default:
+            shutdown(GoAwayCode::ProtocolError);
+            return;
+        }
+
+        // خالی کردن بافر Fragment
+        m_parseBufferLength = 0;
+    }
+
+    // ۲. پردازش Zero-Copy Streaming روی باقیمانده داده ورودی
+
+    const uint8_t* currentDataPtr = data + data_pos;
+    size_t currentLen = len - data_pos;
+
+    size_t pos = 0;
+
+    while (pos + HEADER_SIZE <= currentLen) {
+
+        // پیش‌بینی طول فریم برای بررسی کامل بودن آن
+        uint32_t netLength;
+        memcpy(&netLength, currentDataPtr + pos + 8, 4);
+        uint32_t length = ntohl(netLength);
+
+        uint8_t type_val = currentDataPtr[pos + 1];
+
+        if (type_val == static_cast<uint8_t>(FrameType::Data)) {
+            if (pos + HEADER_SIZE + length > currentLen) {
+                break; // داده ناقص است، باید Fragment را ذخیره کنیم.
+            }
+        }
+
+        // --- تجزیه هدر ---
+
+        uint8_t ver = currentDataPtr[pos++];
+        if (ver != YAMUX_VERSION) {
+            shutdown(GoAwayCode::ProtocolError);
+            break;
+        }
+
+        auto type = static_cast<FrameType>(currentDataPtr[pos++]);
+
+        uint16_t netFlags;
+        memcpy(&netFlags, currentDataPtr + pos, 2); pos += 2;
+        uint16_t flags = ntohs(netFlags);
+
+        uint32_t netStreamId;
+        memcpy(&netStreamId, currentDataPtr + pos, 4); pos += 4;
+        uint32_t streamId = ntohl(netStreamId);
+
+        pos += 4; // پرش از Length/Delta
+
+        const uint8_t* payload = nullptr;
+
+        if (type == FrameType::Data) {
+            if (length > 0) {
+                // !!! Zero-Copy !!!: پوینتر payload مستقیماً به currentDataPtr اشاره می‌کند.
+                payload = currentDataPtr + pos;
+            }
+            pos += length;
+        }
+
+        // فراخوانی Handler
+        switch (type) {
+        case FrameType::Data:
+            handleDataFrame(streamId, payload, length, flags);
+            break;
+        case FrameType::WindowUpdate:
+            handleWindowUpdateFrame(streamId, length,flags);
+            break;
+        case FrameType::Ping:
+            handlePingFrame(streamId, length, flags);
+            break;
+        case FrameType::GoAway:
+            handleGoAwayFrame(length);
+            break;
+        default:
+            shutdown(GoAwayCode::ProtocolError);
+            return;
+        }
+    }
+
+    // ۳. ذخیره فریم ناقص نهایی
+    size_t remaining = currentLen - pos;
+
+    if (remaining > 0) {
+        // یک فریم ناقص مانده است. باید در m_parseBuffer ذخیره شود.
+
+        if (!m_parseBuffer) {
+            if (!initParseBuffer()) {
+                shutdown(GoAwayCode::InternalError);
+                return;
+            }
+        }
+
+        if (remaining > m_parseBufferCapacity) {
+            // این نباید در حالت نرمال اتفاق بیفتد مگر بافری بزرگتر از PARSE_BUFFER_SIZE دریافت شود.
+            shutdown(GoAwayCode::InternalError);
+            return;
+        }
+
+        // کپی باقیمانده به m_parseBuffer
+        memcpy(m_parseBuffer, currentDataPtr + pos, remaining);
+        m_parseBufferLength = remaining;
+    }
+    // اگر remaining == 0، m_parseBufferLength در ابتدای تابع ۰ بود.
+}
+*/
+
+void MultiplexedTunnel::onReceiveData(const uint8_t* data, size_t len) {
+
+    size_t data_pos = 0;
+
+    // 1. تکمیل فریم ناقص قبلی
+    if (m_parseBufferLength > 0) {
+        if (!initParseBuffer()) {
+            shutdown(GoAwayCode::InternalError);
+            return;
+        }
+
+        // اگر تکمیل و پردازش فریم Fragment شده موفقیت‌آمیز نبود، تابع به دلیل نیاز به داده بیشتر برمی‌گردد.
+        if (!processFragmentedFrame(data, len, data_pos)) {
+            return;
+        }
+    }
+
+    // 2. پردازش Zero-Copy Streaming روی باقیمانده داده ورودی
+    processZeroCopyFrames(data, len, data_pos);
+
+    // 3. ذخیره فریم ناقص نهایی
+    storeRemainingData(data, len, data_pos);
 }
 
-// --- Frame Handlers ---
+bool MultiplexedTunnel::processFrame(const uint8_t* frameStart, size_t totalFrameSize, uint32_t payloadLength) {
+    size_t pos = 0;
+
+    uint8_t ver = frameStart[pos++];
+    if (ver != YAMUX_VERSION) {
+        shutdown(GoAwayCode::ProtocolError);
+        return false;
+    }
+
+    auto type = static_cast<FrameType>(frameStart[pos++]);
+
+    uint16_t netFlags;
+    memcpy(&netFlags, frameStart + pos, 2); pos += 2;
+    uint16_t flags = ntohs(netFlags);
+
+    uint32_t netStreamId;
+    memcpy(&netStreamId, frameStart + pos, 4); pos += 4;
+    uint32_t streamId = ntohl(netStreamId);
+
+    pos += 4; // پرش از Length/Delta
+
+    const uint8_t* payload = nullptr;
+
+    if (type == FrameType::Data) {
+        if (payloadLength > 0) {
+            payload = frameStart + pos;
+        }
+        // pos += payloadLength; // نیازی به افزایش در اینجا نیست
+    }
+
+    // فراخوانی Handler
+    switch (type) {
+    case FrameType::Data:
+        handleDataFrame(streamId, payload, payloadLength, flags);
+        break;
+    case FrameType::WindowUpdate:
+        handleWindowUpdateFrame(streamId, payloadLength, flags); // Length is Delta
+        break;
+    case FrameType::Ping:
+        handlePingFrame(streamId, payloadLength, flags); // Length is Value
+        break;
+    case FrameType::GoAway:
+        handleGoAwayFrame(payloadLength); // Length is Code
+        break;
+    default:
+        shutdown(GoAwayCode::ProtocolError);
+        return false;
+    }
+    return true;
+}
+
+size_t MultiplexedTunnel::processFragmentedFrame(const uint8_t* data, size_t len, size_t& data_pos) {
+
+    // 1. تکمیل هدر (در صورت نیاز)
+    if (m_parseBufferLength < HEADER_SIZE) {
+        size_t neededForHeader = HEADER_SIZE - m_parseBufferLength;
+        size_t copyLen = std::min(neededForHeader, len - data_pos);
+
+        memcpy(m_parseBuffer + m_parseBufferLength, data + data_pos, copyLen);
+        m_parseBufferLength += copyLen;
+        data_pos += copyLen;
+
+        if (m_parseBufferLength < HEADER_SIZE) {
+            return false; // هدر هنوز کامل نشده
+        }
+    }
+
+    // 2. تعیین طول فریم کامل
+    uint32_t netLength;
+    memcpy(&netLength, m_parseBuffer + 8, 4);
+    uint32_t payloadLength = ntohl(netLength);
+    uint8_t type_val = m_parseBuffer[1];
+
+    size_t totalFrameSize = HEADER_SIZE;
+    if (type_val == static_cast<uint8_t>(FrameType::Data)) {
+        totalFrameSize += payloadLength;
+    }
+
+    // 3. بررسی ظرفیت (با فرض ** عدم تغییر سایز بافر در حال حاضر**)
+    if (m_parseBufferCapacity < totalFrameSize) {
+        if (totalFrameSize > MAX_ALLOWED_FRAME_SIZE) {
+            printf("Protocol Error: Frame size %zu exceeds max allowed limit.\n", totalFrameSize);
+            shutdown(GoAwayCode::ProtocolError);
+            return false;
+        }
+
+        if (!resizeParseBuffer(totalFrameSize)) {
+            shutdown(GoAwayCode::InternalError);
+            return false;
+        }
+    }
+
+    // 4. تکمیل Payload (در صورت نیاز)
+    size_t neededForFrame = totalFrameSize - m_parseBufferLength;
+    if (neededForFrame > 0) {
+        size_t remainingInput = len - data_pos;
+        size_t copyLen = std::min(neededForFrame, remainingInput);
+
+        memcpy(m_parseBuffer + m_parseBufferLength, data + data_pos, copyLen);
+        m_parseBufferLength += copyLen;
+        data_pos += copyLen;
+
+        if (m_parseBufferLength < totalFrameSize) {
+            return false; // فریم کامل نشد
+        }
+    }
+
+    // 5. پردازش فریم کامل شده
+    bool success = processFrame(m_parseBuffer, totalFrameSize, payloadLength);
+    m_parseBufferLength = 0; // خالی کردن بافر Fragment
+
+    return success;
+}
+
+void MultiplexedTunnel::processZeroCopyFrames(const uint8_t* data, size_t len, size_t& data_pos) {
+    const uint8_t* currentDataPtr = data + data_pos;
+    size_t currentLen = len - data_pos;
+    size_t pos = 0;
+
+    while (pos + HEADER_SIZE <= currentLen) {
+
+        // پیش‌بینی طول فریم برای بررسی کامل بودن آن
+        uint32_t netLength;
+        memcpy(&netLength, currentDataPtr + pos + 8, 4);
+        uint32_t payloadLength = ntohl(netLength);
+
+        uint8_t type_val = currentDataPtr[pos + 1];
+
+        size_t totalFrameSize = HEADER_SIZE;
+        if (type_val == static_cast<uint8_t>(FrameType::Data)) {
+            totalFrameSize += payloadLength;
+        }
+
+        if (pos + totalFrameSize > currentLen) {
+            break; // داده ناقص است، برای ذخیره‌سازی Fragment آماده می‌شویم.
+        }
+
+        // پردازش فریم با Zero-Copy
+        if (!processFrame(currentDataPtr + pos, totalFrameSize, payloadLength)) {
+            return; // خطای پروتکلی، پردازش متوقف می‌شود.
+        }
+
+        pos += totalFrameSize; // حرکت به فریم بعدی
+    }
+    data_pos += pos; // به‌روزرسانی پوزیشن خوانده شده از بافر ورودی
+}
+
+void MultiplexedTunnel::storeRemainingData(const uint8_t* data, size_t len, size_t data_pos) {
+    size_t remaining = len - data_pos;
+
+    if (remaining > 0) {
+        // یک فریم ناقص مانده است. باید در m_parseBuffer ذخیره شود.
+        if (!m_parseBuffer) {
+            if (!initParseBuffer()) {
+                shutdown(GoAwayCode::InternalError);
+                return;
+            }
+        }
+
+        if (remaining > m_parseBufferCapacity) {
+            // این حالت نشان‌دهنده دریافت یک بلوک داده بزرگتر از انتظار است.
+            shutdown(GoAwayCode::InternalError);
+            return;
+        }
+
+        // کپی باقیمانده به m_parseBuffer
+        memcpy(m_parseBuffer, data + data_pos, remaining);
+        m_parseBufferLength = remaining;
+    }
+}
 
 void MultiplexedTunnel::handleNewStream(uint32_t streamId, uint16_t flags)
 {
@@ -338,7 +879,7 @@ void MultiplexedTunnel::handleNewStream(uint32_t streamId, uint16_t flags)
 
     // Send ACK if not RST
     if (!(flags & FrameFlags::RST)) {
-        sendFrame(FrameType::Data, FrameFlags::ACK, streamId, 0);
+        sendFrame(FrameType::WindowUpdate, FrameFlags::ACK, streamId, 0);
     }
 
 }
@@ -395,7 +936,7 @@ void MultiplexedTunnel::handleDataFrame(uint32_t streamId, const uint8_t* payloa
     }
 }
 
-// FIX for Yamux: Delta is in Length field
+// FIX
 void MultiplexedTunnel::handleWindowUpdateFrame(uint32_t streamId, uint32_t length, uint16_t flags) {
     if (streamId == 0)
         return; // Must not be for Session
@@ -416,33 +957,29 @@ void MultiplexedTunnel::handleWindowUpdateFrame(uint32_t streamId, uint32_t leng
 
         auto& s = it->second;
         s.sendWindow += delta;
-        printf("get Window update for stream: [%u] new sendWindow : [%d] recvWindow : [%d] \n", streamId, s.sendWindow, s.recvWindow);
+        //printf("get Window update for stream: [%u] new sendWindow : [%d] recvWindow : [%d] \n", streamId, s.sendWindow, s.recvWindow);
         processPending(streamId);
     }
 }
 
+
+// FIX: handlePingFrame (حفظ منطق قبلی)
 void MultiplexedTunnel::handlePingFrame(uint32_t streamId, uint32_t length, uint16_t flags) {
-    if (streamId != 0)
-        return; // Must be session-level (StreamID 0)
+    if (streamId != 0) {
+        shutdown(GoAwayCode::ProtocolError);
+        return;
+    }
 
-    uint32_t value = length; // FIX: Value is in the length field to match Go impl
-
-    if (flags & FrameFlags::ACK) {
-        // Pong received. You can use 'value' for RTT calculation here.
-        printf("Pong received: %u\n", value);
-    } else {
-        // Ping request → send Pong (ACK)
-        printf("Ping received: %u. Sending Pong.\n", value);
-        sendPing(true, value);
+    if (!(flags & FrameFlags::ACK)) {
+        sendPing(true, length);
+        //printf(">>>>>>>>>>>>>>>>>> replay ping\n");
     }
 }
 
-void MultiplexedTunnel::handleGoAwayFrame(uint32_t length) {
-    uint32_t code = length; // FIX: Code is in the length field to match Go impl
-
+// FIX: handleGoAwayFrame (حفظ منطق قبلی)
+void MultiplexedTunnel::handleGoAwayFrame(uint32_t code) {
     printf("GoAway received. Code: %u\n", code);
 
-    // Close all active streams
     std::vector<uint32_t> ids;
     for (const auto& pair : m_streams) ids.push_back(pair.first);
 
@@ -455,7 +992,6 @@ void MultiplexedTunnel::handleGoAwayFrame(uint32_t length) {
         }
     }
 
-    // Close the underlying TCP socket immediately
     close(true);
 }
 
@@ -464,22 +1000,26 @@ void MultiplexedTunnel::processPending(uint32_t streamId) {
     if (it == m_streams.end()) return;
 
     auto& s = it->second;
-    while (!s.pendingData.empty() && s.sendWindow > 0) {
-        //std::cout << "Processing pending for stream " << streamId << ": sent chunk " << chunk << ", remaining pending: " << s.pendingData.size() << std::endl;
-        printf("processPending sendWindow is 0, stream %u. Pending size: %zu\n", streamId, s.pendingData.size());
+    // FIX: چک کردن null بودن SendQueue
+    if (!s.pendingData)
+        return;
 
-        auto& buf = s.pendingData.front();
-        uint32_t chunk = std::min<uint32_t>((uint32_t)buf.size(), s.sendWindow);
+    while (!s.pendingData->empty() && s.sendWindow > 0) {
+        //printf("processPending sendWindow is 0, stream %u. Pending size: %zu\n", streamId, s.pendingData->count());
 
-        // Send the chunk
-        sendFrame(FrameType::Data, FrameFlags(0), streamId, chunk, buf.data());
+        SendQueue::Buffer& buf = s.pendingData->front();
+        uint32_t chunk = std::min<uint32_t>((uint32_t)buf.len, s.sendWindow);
+
+        sendFrame(FrameType::Data, FrameFlags(0), streamId, chunk, (const uint8_t*)buf.data);
         s.sendWindow -= chunk;
 
-        if (chunk < buf.size()) {
-            // Partial send, keep the rest in the front
-            buf.erase(buf.begin(), buf.begin() + chunk);
+        if (chunk < buf.len) {
+            // Partial send
+            memmove(buf.data, (char*)buf.data + chunk, buf.len - chunk);
+            buf.len -= chunk;
             break;
         }
-        s.pendingData.pop_front(); // Entire buffer sent
+        // Entire buffer sent
+        s.pendingData->pop_front();
     }
 }
