@@ -102,7 +102,6 @@ public:
     int getErrorCode();
 
     socketStatus getStatus() const;
-
     EpollReactor *getReactor() const;
     void _accepted(int fd);
 
@@ -128,8 +127,6 @@ private:
     bool m_readPaused { false };
     bool m_pendingClose { false };
     socketStatus status {Ready};
-
-
 
     void updateLastActive();
 
