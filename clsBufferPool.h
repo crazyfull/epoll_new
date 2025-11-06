@@ -10,6 +10,7 @@ public:
     BufferPool(size_t pool_size = 1024 * 1024);
     ~BufferPool();
     void* allocate(size_t size);
+    void* reallocate(void* ptr, size_t size);
     void deallocate(void* ptr);
 
 private:

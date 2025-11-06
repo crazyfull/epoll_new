@@ -19,6 +19,10 @@ void *BufferPool::allocate(size_t size) {
     return tlsf_malloc(m_tlsf, size);
 }
 
+void *BufferPool::reallocate(void *ptr, size_t size) {
+    return tlsf_realloc(m_tlsf, ptr, size);
+}
+
 void BufferPool::deallocate(void *ptr) {
     tlsf_free(m_tlsf, ptr);
 }
