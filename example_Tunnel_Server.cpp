@@ -8,10 +8,11 @@ void onServerStreamData(void* arg, uint32_t streamId, const uint8_t* data, size_
     MultiplexedTunnel* tunnel = static_cast<MultiplexedTunnel*>(arg);
 
     std::string received_message((const char*)data, len);
-    std::cout << "Server: Received on stream " << streamId << ": " << received_message << std::endl;
+   // std::cout << "Server: Received on stream " << streamId << ": " << received_message << std::endl;
 
     // Echo
     tunnel->sendToStream(streamId, data, len);
+
 }
 
 void onServerStreamClose(void* arg, uint32_t streamId) {
@@ -23,16 +24,23 @@ void onServerNewStream(void* arg, uint32_t streamId, MultiplexedTunnel::Stream* 
 
     std::cout << "Server: New incoming stream " << streamId << " accepted." << std::endl;
 
-    // تنظیم کالبک‌های onData و onClose برای Stream جدید
+    // callbacks
     newStream->onData = onServerStreamData;
     newStream->onClose = onServerStreamClose;
-    newStream->arg = tunnel; // پوینتر به تونل را به عنوان آرگومان کالبک‌ها پاس می‌دهیم
+    newStream->arg = tunnel;
+
+    //
+    std::string message = "Message # hello from c++ server!";
+    //tunnel->sendToStream(streamId, (const uint8_t*)message.c_str(), message.length());
+    //tunnel->sendPing(true, 8855);
+
 }
 
 // Factory برای accept
 TCPSocket* acceptCallback(void* ctx) {
     MultiplexedTunnel* tunnel = new MultiplexedTunnel(false);
     tunnel->setOnNewStream(onServerNewStream, tunnel);
+
 
     return tunnel;
 }

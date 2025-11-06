@@ -15,7 +15,11 @@ void onClientStreamData(void* arg, uint32_t streamId, const uint8_t* data, size_
     MultiplexedTunnel* tunnel = static_cast<MultiplexedTunnel*>(arg);
 
     std::string input((const char*)data, len);
-    printf("onClientStreamData: [%u] [%s]\n\n", streamId, input.c_str());
+
+    if(strstr((char*)data, "e #920000")){
+        printf("onClientStreamData: [%u] [%s]\n\n", streamId, input.c_str());
+
+    }
 
 }
 
@@ -25,7 +29,7 @@ void onClientStreamClose(void* arg, uint32_t streamId) {
 
 void sendInitialData(MultiplexedTunnel* tunnel, uint32_t streamId) {
 
-    usleep(100 * 1000);
+    //usleep(100 * 1000);
 
 
     int count = 0;
@@ -34,7 +38,7 @@ void sendInitialData(MultiplexedTunnel* tunnel, uint32_t streamId) {
         std::string message = "Message #" + std::to_string(count) + " from client!";
         tunnel->sendToStream(streamId, (const uint8_t*)message.c_str(), message.length());
 
-        if(count > 120*1000){//120*1000
+        if(count > 920*1000){//120*1000
             break;
         }
     }
@@ -104,17 +108,20 @@ int main() {
     Timer Timer1;
     Timer1.setReactor(srv.getRoundRobinShard());
     Timer1.start(1, [&Timer1, tunnel] () {
+
         //
-        gCounter++;
-        if(gCounter >= 1*1000){
-            Timer1.stop();
+        for(int i = 0; i < 8;i++){
+            gCounter++;
+            if(gCounter >= 120*1000){
+                Timer1.stop();
+            }
+
+            std::string message = "Message #" + std::to_string(gCounter) + " from client!";
+            tunnel->sendToStream(1, (const uint8_t*)message.c_str(), message.length());
         }
 
-        std::string message = "Message #" + std::to_string(gCounter) + " from client!";
-        tunnel->sendToStream(1, (const uint8_t*)message.c_str(), message.length());
-
     });
-    */
+*/
     // 4. نگه داشتن برنامه در حال اجرا
     printf("\nPress ENTER to stop the client and close the stream...\n");
     getchar();
@@ -127,7 +134,7 @@ int main() {
     }
 
     printf("Press ENTER to terminate the program.\n");
-    getchar();
+    //getchar();
 
     delete tunnel;
     return 0;
