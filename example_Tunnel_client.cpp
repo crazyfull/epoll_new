@@ -15,9 +15,9 @@ void onClientStreamData(void* arg, uint32_t streamId, const uint8_t* data, size_
     MultiplexedTunnel* tunnel = static_cast<MultiplexedTunnel*>(arg);
 
     std::string input((const char*)data, len);
+    printf("onClientStreamData: [%u] [%s]\n\n", streamId, input.c_str());
 
     if(strstr((char*)data, "e #920000")){
-        printf("onClientStreamData: [%u] [%s]\n\n", streamId, input.c_str());
 
     }
 
@@ -38,7 +38,7 @@ void sendInitialData(MultiplexedTunnel* tunnel, uint32_t streamId) {
         std::string message = "Message #" + std::to_string(count) + " from client!";
         tunnel->sendToStream(streamId, (const uint8_t*)message.c_str(), message.length());
 
-        if(count > 920*1000){//120*1000
+        if(count > 120*1000){//120*1000
             break;
         }
     }
@@ -73,7 +73,7 @@ void onClientConnected(void* arg) {
 
 //47.75 Go
 //46.93
-int main() {
+int main4() {
     // create epoll
     Server srv(1024, 1);
     srv.setUseGarbageCollector(false);
@@ -91,7 +91,7 @@ int main() {
     // connect to yamux server
     //51.195.150.84
     //127.0.0.1
-    if (tunnel->connectTo("127.0.0.1", 6060)) {
+    if (tunnel->connectTo("51.195.150.84", 6060)) {
         std::cout << "Attempting to connect to 127.0.0.1:6060..." << std::endl;
     } else {
         std::cout << "Connect failed immediately." << std::endl;

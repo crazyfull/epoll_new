@@ -1,10 +1,9 @@
 #include "clsTCPSocket.h"
 #include "clsServer.h"
-#include "clsTimer.h"
+#include <sys/resource.h>
 
 #include <malloc.h>
 #include "clsSocks5Proxy.h"
-
 
 TCPSocket* OnAccepted(void* p){
     //Server* srv = static_cast<Server*>(p);
@@ -12,25 +11,7 @@ TCPSocket* OnAccepted(void* p){
     return newWebsocket->getSocketBase();
 }
 
-// ============================== Example main ===========================
-#include <sys/resource.h>
-#include "clsDNSLookup.h"
-
-void cbResolve(const char *hostname, char **ips, size_t count, DNSLookup::QUERY_TYPE qtype, void *p)
-{
-    if(count == 0){
-        printf("type: [%u] hostname: [%s] not result\n", qtype, hostname);
-    }else{
-        printf("type: [%u] hostname: [%s] ip: [%s] count[%zu]\n",qtype , hostname, ips[0], count);
-    }
-
-    printf("\n");
-}
-
-
-//DNSLookup dnsLookup(srv.getRoundRobinShard());
-
-int main1()
+int main()
 {
 
     //in to libwrench hast max ro az onja begir
@@ -53,6 +34,8 @@ int main1()
         return 1;
     }
 
+    getchar();
+
     //std::printf("listening on %d\n", DEFAULT_PORT);
     // Run forever
     /*
@@ -72,10 +55,9 @@ int main1()
     //for(;;)
 
 
-
+    /*
     srv.getRoundRobinShard()->getIPbyName("freetestdata.com", cbResolve, nullptr);
 
-    /*
     dnsLookup.setTimeout(3);
     dnsLookup.setCache_ttl_sec(1);
     dnsLookup.setMaxRetries(1);
@@ -129,7 +111,6 @@ A:
         //srv.getRoundRobinShard()->test();
 
     }
-
 
 
     //end

@@ -21,39 +21,44 @@ CONFIG -= qt
 #LIBS += -luring -lssl -lcrypto
 LIBS += -static -static-libgcc -static-libstdc++
 
+#source Headers
+INCLUDEPATH += $$PWD/src
+DEPENDPATH += $$PWD/src
+
+
 SOURCES += \
-        clsBufferPool.cpp \
-        clsDNSLookup.cpp \
-        clsEpollReactor.cpp \
-        clsIntrusiveList.cpp \
-        clsMultiplexedTunnel.cpp \
-        clsSendQueue.cpp \
-        clsServer.cpp \
-        clsSocketList.cpp \
+        src/clsBufferPool.cpp \
+        src/clsDNSLookup.cpp \
+        src/clsEpollReactor.cpp \
+        src/clsIntrusiveList.cpp \
+        src/clsMultiplexedTunnel.cpp \
+        src/clsSendQueue.cpp \
+        src/clsServer.cpp \
+        src/clsSocketList.cpp \
         clsSocks5Proxy.cpp \
-        clsTCPSocket.cpp \
-        clsTimer.cpp \
-        clsTimerManager.cpp \
+        src/clsTCPSocket.cpp \
+        src/clsTimer.cpp \
+        src/clsTimerManager.cpp \
         example_Tunnel_Server.cpp \
         example_Tunnel_client.cpp \
         main.cpp \
-        tlsf.c
+        src/tlsf.c
 
 HEADERS += \
-    SocketContext.h \
-    clsBufferPool.h \
-    clsDNSLookup.h \
-    clsEpollReactor.h \
-    clsIntrusiveList.h \
-    clsMultiplexedTunnel.h \
-    clsSendQueue.h \
-    clsServer.h \
-    clsGCList.h \
-    clsSocketList.h \
+    src/SocketContext.h \
+    src/clsBufferPool.h \
+    src/clsDNSLookup.h \
+    src/clsEpollReactor.h \
+    src/clsIntrusiveList.h \
+    src/clsMultiplexedTunnel.h \
+    src/clsSendQueue.h \
+    src/clsServer.h \
+    src/clsGCList.h \
+    src/clsSocketList.h \
     clsSocks5Proxy.h \
-    clsTCPSocket.h \
-    clsTimer.h \
-    clsTimerManager.h \
-    constants.h \
-    epoll.h
+    src/clsTCPSocket.h \
+    src/clsTimer.h \
+    src/clsTimerManager.h \
+    src/constants.h \
+    src/epoll.h
 
