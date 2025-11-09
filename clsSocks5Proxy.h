@@ -77,7 +77,7 @@ public:
     }
 */
 
-private:
+public:
     bool isPropagatingPause = false;
     bool isPropagatingResume = false;
 

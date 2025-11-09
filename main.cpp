@@ -11,7 +11,7 @@ TCPSocket* OnAccepted(void* p){
     return newWebsocket->getSocketBase();
 }
 
-int main()
+int main1()
 {
 
     //in to libwrench hast max ro az onja begir

@@ -594,7 +594,7 @@ void MultiplexedTunnel::handleDataFrame(uint32_t streamId, const uint8_t* payloa
             s.onClose(s.arg, streamId);
         }
         if (s.localClosed || flags & FrameFlags::RST) {
-            m_streams.erase(it); // Fully closed or hard reset
+            //m_streams.erase(it); // segment fault
         }
     }
 }

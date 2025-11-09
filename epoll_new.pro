@@ -27,6 +27,10 @@ DEPENDPATH += $$PWD/src
 
 
 SOURCES += \
+        Socks5LocalForwarder.cpp \
+        Socks5StreamHandler.cpp \
+        Socks5TunnelClient.cpp \
+        Socks5TunnelServer.cpp \
         src/clsBufferPool.cpp \
         src/clsDNSLookup.cpp \
         src/clsEpollReactor.cpp \
@@ -45,6 +49,8 @@ SOURCES += \
         src/tlsf.c
 
 HEADERS += \
+    Socks5LocalForwarder.h \
+    Socks5StreamHandler.h \
     src/SocketContext.h \
     src/clsBufferPool.h \
     src/clsDNSLookup.h \
