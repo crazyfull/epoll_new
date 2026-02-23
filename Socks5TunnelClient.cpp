@@ -41,7 +41,7 @@ TCPSocket* OnLocalSocksAccepted(void* p) {
 }
 
 
-int main()
+int main1()
 {
     //51.195.150.84
     //127.0.0.1

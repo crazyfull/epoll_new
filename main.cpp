@@ -11,7 +11,7 @@ TCPSocket* OnAccepted(void* p){
     return newWebsocket->getSocketBase();
 }
 
-int main1()
+int main()
 {
 
     //in to libwrench hast max ro az onja begir
@@ -20,7 +20,7 @@ int main1()
     int maxfd = (int)r.rlim_cur;
     std::fprintf(stderr, "maxfd: %d\n", maxfd);
     //Server srv(maxfd, 1);
-    Server srv(maxfd);
+    Server srv(maxfd,1);
 
 
     srv.setUseGarbageCollector(false);

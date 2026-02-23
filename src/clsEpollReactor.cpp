@@ -27,7 +27,6 @@ EpollReactor::~EpollReactor() {
         delete m_pDNSLookup;
     }
 
-
     if(m_pTimers){
         delete m_pTimers;
     }
@@ -58,6 +57,7 @@ void EpollReactor::init()
     m_pDNSLookup->setMaxRetries(DNS_MAX_RETRIES);
 
     //
+    /**/
     m_pTimers = new TimerManager;
     m_pTimers->setReactor(this);
 
@@ -66,7 +66,8 @@ void EpollReactor::init()
     m_pTimers->addTimer(IDLE_CONNECTION_INTERVAL_MS, [this] () {
         maintenance();
     });
-*/
+    */
+
     //Managing closing stalled Connections
     m_pTimers->addTimer(CLOSE_WAIT_INTERVAL_MS, [this] () {
         maintenance();
@@ -88,6 +89,7 @@ void EpollReactor::init()
     m_pTimers->addTimer(GARBAGE_COLLECTOR_INTERVAL_MS, [this] {
         this->runGarbageCollector();
     });
+
 }
 
 void EpollReactor::setOnAccepted(acceptCallback fncallback, void* p) {
@@ -267,7 +269,6 @@ void EpollReactor::adoptAccepted(int m_fd) {
         pSocketbase->setReactor(this);
         //adopt in class
         pSocketbase->_accepted(fd);
-
     }
 }
 
@@ -353,7 +354,7 @@ void EpollReactor::onTCPEvent(int fd, uint32_t &ev, void *ptr){
         printf("EPOLLHUP: fd=%d\n", fd);
         if (pSockBase->getSocketContext()->writeQueue->empty()) {
             pSockBase->close();
-            //m_GCList.retire(pSockBase);
+            //m_GCList.retire(pSockBase);   //inja add beshe to garbage collector
         } else {
             pSockBase->handleHalfClose(); // khali kardane send queue
         }
@@ -461,7 +462,7 @@ void EpollReactor::run(std::atomic<bool> &stop)
     std::vector <epoll_event> evs(m_maxEvent);
     while(!stop.load(std::memory_order_relaxed))
     {
-        int n = epoll_wait(m_epollSocket, evs.data(), (int)evs.size(), 1000);
+        int n = epoll_wait(m_epollSocket, evs.data(), (int)evs.size(), 1000); //1000 ro be -1 taghir dadim baraye mikrotik container, zamani ke timeout nadashte bashe ta eventi nayad epoll faal nemishe pass agar bekhaym barname ro be soorat amn bebabndim nemishe dge
         //printf("n %d\n", n);
 
         if(n < 0) {
