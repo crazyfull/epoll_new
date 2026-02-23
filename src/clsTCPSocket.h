@@ -38,7 +38,6 @@ public:
     using OnResumeFn = void(*)(void* p);
 
 
-
     void setOnData(OnDataFn fn, void *Arg);
     void setOnConnecting(OnConnectingFn fn, void* Arg);
     void setOnConnected(OnConnectedFn fn, void *Arg);
@@ -81,6 +80,7 @@ public:
     int fd() const;
     TCPSocket *getPointer();
     uint64_t getLastActiveTime();
+    uint16_t getLocalPort();
     //void setSocketContext(TCPConnectionHandle &c);
 
     bool adoptFd(int fd);

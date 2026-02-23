@@ -248,7 +248,7 @@ void TCPSocket::close(bool force) {
         handleOnClose();
 
         //disable garbage collector
-        //m_pReactor->deleteLater(this);
+        m_pReactor->deleteLater(this);
 
     } else {
         printf("graceful shutdown>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> %d \n", fd());
@@ -413,6 +413,14 @@ uint64_t TCPSocket::getLastActiveTime()
     return m_SocketContext.lastActive;
 }
 
+uint16_t TCPSocket::getLocalPort()
+{
+    struct sockaddr_in local;
+    socklen_t len = sizeof(local);
+    getsockname(m_SocketContext.fd, (struct sockaddr*)&local, &len);
+    return ntohs(local.sin_port);
+}
+
 void TCPSocket::setOnData(OnDataFn fn, void* Arg) {
     m_onData = fn;
     m_callbacksArg = Arg;
@@ -535,7 +543,6 @@ void TCPSocket::onReadable()
             break;
         }
     }
-
 }
 
 
@@ -784,16 +791,16 @@ void TCPSocket::handleHalfClose() {
     ssize_t ret = ::recv(m_SocketContext.fd, buf, 1, MSG_PEEK | MSG_DONTWAIT);
     if (ret == 0) {
 
-        if (!m_SocketContext.writeQueue->empty()) {
+        if (m_SocketContext.writeQueue && m_SocketContext.writeQueue->empty()) {
+            //safe ersal khalie force close beshe
+            close(true);
+            return;
+        } else {
             m_pendingClose = true;
             setStatus(Closing);
             updateLastActive();
             m_pReactor->addFlags(&m_SocketContext, EPOLLOUT); // فعال کردن اگر لازم
             printf("add EPOLLOUT TCPSocket::handleHalfClose() %zu\n", m_SocketContext.writeQueue->size());
-        } else {
-            //safe ersal khalie force close beshe
-            close(true);
-            return;
         }
 
 
