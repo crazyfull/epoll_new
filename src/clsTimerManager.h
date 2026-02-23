@@ -21,6 +21,8 @@ public:
     void setReactor(EpollReactor *r);
     void onTick();
 
+    EpollReactor *getReactor() const;
+
 private:
 
     void updateTimerFd();

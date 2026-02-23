@@ -102,3 +102,8 @@ bool Timer::startInternal(int interval_ms, Callback cb, bool singleShot) {
     bool ret = m_pReactor->register_fd(fd(), &m_SocketContext.ev, IS_TIMER_SOCKET, this);
     return ret;
 }
+
+EpollReactor *Timer::getReactor() const
+{
+    return m_pReactor;
+}

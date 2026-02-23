@@ -17,6 +17,8 @@ public:
     int fd() const;
     void setReactor(EpollReactor *r);
 
+    EpollReactor *getReactor() const;
+
 private:
     bool startInternal(int interval_ms, Callback cb, bool singleShot);
 

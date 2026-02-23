@@ -178,3 +178,8 @@ void TimerManager::updateTimerFd() {
 int TimerManager::fd() const {
     return m_SocketContext.fd;
 }
+
+EpollReactor *TimerManager::getReactor() const
+{
+    return m_pReactor;
+}
