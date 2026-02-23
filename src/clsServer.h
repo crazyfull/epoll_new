@@ -13,7 +13,7 @@ public:
     ~Server();
 
     void setOnAccepted(EpollReactor::acceptCallback f, void *p);
-    void AddNewListener(int Port, const char *bindIP = nullptr);
+    bool AddNewListener(int Port, const char *bindIP = nullptr);
     bool start();
     void stop();
 

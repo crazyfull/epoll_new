@@ -10,17 +10,21 @@ Server::~Server() {
     stop();
 }
 
-void Server::AddNewListener(int Port, const char *bindIP)
+bool Server::AddNewListener(int Port, const char *bindIP)
 {
     /**/
     if(!bindIP)
         bindIP = "0.0.0.0";
 
     for (auto& worker : m_workerList) {
-        worker->add_listener(Port);
+
+        if(!worker->add_listener(Port)){
+            return false;
+        }
     }
 
     printf("StartListen: (%s:%d)\n", bindIP, Port);
+    return true;
 
 }
 
@@ -33,7 +37,8 @@ bool Server::start()
 {
     // assign shard (6) round-robin
 
-    setup_signals();
+    //disable chon to main signal ro control mikonim
+    // setup_signals();
 
     for(int i = 0; i < m_shardCount; ++i) {
         m_threads.emplace_back([this, i]() {
